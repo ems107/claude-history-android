@@ -2,4 +2,11 @@
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
     <background android:drawable="@color/ic_launcher_background" />
     <foreground android:drawable="@drawable/ic_launcher_foreground" />
+    <!--
+      Themed icons (Android 13+) take only the alpha of this layer and paint it
+      in the wallpaper's colours, so the foreground serves unchanged: the two
+      faded chevrons come through as a lighter tint, which is the same reading
+      the colour version has.
+    -->
+    <monochrome android:drawable="@drawable/ic_launcher_foreground" />
 </adaptive-icon>
