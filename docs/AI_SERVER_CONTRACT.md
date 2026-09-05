@@ -20,7 +20,7 @@
 | GET | `/api/events` | SSE. We care about two events, `{"type":"notifications-changed"}` and `{"type":"live-changed"}`; everything else is for the web UI |
 | GET | `/api/settings` | the server's own notification preferences, which ours inherit: `notifyEnabled`, `notifyOnNeedsYou`, `notifyOnFinished` |
 
-`GET /api/meta` is worth a seventh line for diagnostics alone: it carries the server's `version` and whether it is a dev instance.
+`GET /api/meta` earns a seventh line for diagnostics alone: it carries the server's `version` and whether it is a dev instance. **Read it before concluding this app failed to parse something.** A field that arrives null on every row, or a shape that decodes into nothing, is a server too old to send it at least as often as it is a bug here — and the two look identical from the phone. The version is never worth writing down, only asking for: it moves whenever the user installs a release.
 
 ### `StoppedSessionEntry`
 
