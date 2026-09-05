@@ -23,7 +23,9 @@ Because updates install over the app, **every release is signed with the same ke
 
 On a phone with Google's services, expect *"App scan recommended"* and then *"Harmful app blocked"*. It is a false positive, and a predictable one: Play Protect has never seen this app, its signing key has no reputation, and it asks permission to install packages — which is exactly what a dropper does. Google's own scan of a release here answered *potentially unwanted*, with nothing behind it but those facts.
 
-Sending the app to Google for scanning is what produces that verdict, so it does not help. What works: on the dialog, open **More details** and choose **Install without scanning**. It asks for your fingerprint or PIN, and then installs. The same applies to updates from inside the app, which is why a blocked install now says so in those words instead of reporting `INSTALL_FAILED_VERIFICATION_FAILURE`.
+Sending the app to Google for scanning is what produces that verdict, so it does not help. What works: on the dialog, open **More details** and choose **Install without scanning**. It asks for your fingerprint or PIN, and then installs.
+
+**It asks every time, not only on the first install** — measured across four releases here — so an update from inside the app hits the same dialog. That is why a blocked install now says so in those words, instead of reporting `INSTALL_FAILED_VERIFICATION_FAILURE` and leaving you to guess.
 
 ## Updating
 

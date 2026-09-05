@@ -3,6 +3,8 @@ package io.github.ems107.claudehistory.ui
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -31,6 +33,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import io.github.ems107.claudehistory.data.AppPrefs
 import io.github.ems107.claudehistory.update.ApkInstaller
@@ -145,7 +153,7 @@ private fun UpdatePanel(state: UpdateState, onCheck: () -> Unit) {
                         style = MaterialTheme.typography.titleSmall,
                     )
                     if (state.release.notes.isNotBlank()) {
-                        Text(state.release.notes, style = MaterialTheme.typography.bodySmall)
+                        ReleaseNotes(state.release.notes)
                     }
                     Button(
                         enabled = state.release.assetUrl.isNotBlank(),
@@ -190,4 +198,59 @@ private fun UpdatePanel(state: UpdateState, onCheck: () -> Unit) {
             OutlinedButton(onClick = onCheck, enabled = !busy) { Text("Check now") }
         }
     }
+}
+
+/**
+ * The release notes, drawn rather than dumped.
+ *
+ * They are markdown written for the GitHub release page, so raw `###` and `**`
+ * are the one thing on this screen a person actually reads arriving as syntax.
+ * This is not a markdown renderer and does not pretend to be: headings, bullets,
+ * bold and code spans are the whole of what these notes use.
+ */
+@Composable
+private fun ReleaseNotes(notes: String) {
+    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+        notes.lines().forEach { raw ->
+            val line = raw.trim()
+            when {
+                line.isEmpty() -> Spacer(Modifier.height(3.dp))
+
+                line.startsWith("#") -> Text(
+                    inlineMarkup(line.trimStart('#').trim()),
+                    style = MaterialTheme.typography.labelLarge,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
+
+                line.startsWith("- ") || line.startsWith("* ") -> Row {
+                    Text("•", style = MaterialTheme.typography.bodySmall)
+                    Text(
+                        inlineMarkup(line.drop(2)),
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(start = 6.dp),
+                    )
+                }
+
+                else -> Text(inlineMarkup(line), style = MaterialTheme.typography.bodySmall)
+            }
+        }
+    }
+}
+
+private val MARKUP = Regex("""\*\*(.+?)\*\*|`([^`]+)`""")
+
+private fun inlineMarkup(text: String): AnnotatedString = buildAnnotatedString {
+    var last = 0
+    MARKUP.findAll(text).forEach { match ->
+        append(text.substring(last, match.range.first))
+        val bold = match.groupValues[1]
+        val code = match.groupValues[2]
+        if (bold.isNotEmpty()) {
+            withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append(bold) }
+        } else {
+            withStyle(SpanStyle(fontFamily = FontFamily.Monospace)) { append(code) }
+        }
+        last = match.range.last + 1
+    }
+    append(text.substring(last))
 }

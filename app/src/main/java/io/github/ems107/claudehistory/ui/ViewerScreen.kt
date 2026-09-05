@@ -6,6 +6,7 @@ import android.content.Intent
 import android.net.Uri
 import android.view.ViewGroup
 import android.webkit.CookieManager
+import android.webkit.RenderProcessGoneDetail
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -24,6 +25,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -85,13 +88,17 @@ fun ViewerScreen(
                 is Connection.Ready -> {
                     val cookie = viewModel.sessionCookie(current.baseUrl)
                     val target = current.baseUrl.trimEnd('/') + startPath
-                    AndroidView(
-                        modifier = Modifier.fillMaxSize(),
-                        factory = { ctx -> WebViewCache.obtain(ctx, serverId) },
-                        update = { view ->
-                            WebViewCache.load(view, serverId, current.baseUrl, target, cookie)
-                        },
-                    )
+                    // Keyed on the generation so a view whose renderer died is
+                    // replaced rather than shown dead.
+                    key(WebViewCache.generationOf(serverId)) {
+                        AndroidView(
+                            modifier = Modifier.fillMaxSize(),
+                            factory = { ctx -> WebViewCache.obtain(ctx, serverId) },
+                            update = { view ->
+                                WebViewCache.load(view, serverId, current.baseUrl, target, cookie)
+                            },
+                        )
+                    }
                 }
 
                 null -> CentredMessage("Connecting...", spinner = serverId in connecting)
@@ -205,7 +212,26 @@ object WebViewCache {
     private val loaded = mutableMapOf<String, String>()
     private val homes = mutableMapOf<String, Uri>()
 
+    /**
+     * Bumped when a view has to be thrown away. Compose state on purpose: the
+     * screen keys its `AndroidView` on it, so a discarded view is not merely
+     * forgotten here -- it is replaced on the next frame.
+     */
+    private val generations = mutableStateMapOf<String, Int>()
+
+    fun generationOf(id: String): Int = generations[id] ?: 0
+
     fun get(id: String): WebView? = views[id]
+
+    /** Destroy one view and arrange for a fresh one to take its place. */
+    fun discard(id: String) {
+        views.remove(id)?.let { view ->
+            (view.parent as? ViewGroup)?.removeView(view)
+            view.destroy()
+        }
+        loaded.remove(id)
+        generations[id] = generationOf(id) + 1
+    }
 
     @SuppressLint("SetJavaScriptEnabled")
     fun obtain(context: Context, id: String): WebView {
@@ -282,6 +308,18 @@ object WebViewCache {
     }
 
     private class ServerWebViewClient(private val id: String) : WebViewClient() {
+        /**
+         * The renderer died -- almost always out of memory, and these views are
+         * kept alive for hours holding long conversations. Returning false from
+         * here takes the whole app down with it; returning true lets us throw the
+         * dead view away and build another, which is what the generation counter
+         * is for.
+         */
+        override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail): Boolean {
+            discard(id)
+            return true
+        }
+
         override fun onPageFinished(view: WebView, url: String) {
             view.evaluateJavascript(WIDE_VIEWPORT, null)
             // Not cosmetic: claude-history withdraws a session's row from the

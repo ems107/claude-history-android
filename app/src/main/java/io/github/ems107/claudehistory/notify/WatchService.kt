@@ -1,5 +1,6 @@
 package io.github.ems107.claudehistory.notify
 
+import android.annotation.SuppressLint
 import android.app.Notification
 import android.app.PendingIntent
 import android.app.Service
@@ -216,6 +217,10 @@ class WatchService : Service() {
         ServiceCompat.startForeground(this, Notifications.WATCHING_ID, buildNotice(), type)
     }
 
+    // The permission can be refused or revoked at any moment, and the runCatching
+    // is the handling: a notice that cannot be redrawn is not worth a crash, and
+    // the service goes on watching either way.
+    @SuppressLint("MissingPermission")
     private fun updateNotice() {
         runCatching { NotificationManagerCompat.from(this).notify(Notifications.WATCHING_ID, buildNotice()) }
     }
