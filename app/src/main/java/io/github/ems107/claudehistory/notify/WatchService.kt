@@ -73,7 +73,7 @@ class WatchService : Service() {
     private val jobs = mutableMapOf<String, Job>()
 
     /** What each running job was started with, so an edit can restart it. */
-    private val started = mutableMapOf<String, Int>()
+    private val started = mutableMapOf<String, Server>()
 
     /**
      * Both the server list arriving and a network appearing rewrite [jobs], from
@@ -144,6 +144,11 @@ class WatchService : Service() {
         // What is in there is a claim about right now, and there is about to be
         // nobody making it.
         graph.watch.clear()
+        // The notice goes with it. Stopping the service normally takes it away,
+        // but the coroutine that redraws it is its own: it can perfectly well
+        // post one on the way out, and an ongoing notification is not something
+        // the person left looking at it can swipe off.
+        runCatching { NotificationManagerCompat.from(this).cancel(Notifications.WATCHING_ID) }
         super.onDestroy()
     }
 
@@ -156,17 +161,19 @@ class WatchService : Service() {
             graph.watch.forget(gone)
         }
         servers.forEach { server ->
-            val print = watchPrint(server)
             // Edited while it was being watched. A job carries the address, the
             // credentials and the preferences it STARTED with, so a corrected
             // password used to sit unused until the connection happened to drop,
             // and a server muted here went on looking unmuted until the next
             // thing happened over there.
-            if (jobs[server.id] != null && started[server.id] != print) {
+            if (jobs[server.id] != null && !sameWatch(started[server.id], server)) {
                 jobs.remove(server.id)?.cancelAndJoin()
             }
-            if (jobs[server.id] == null) {
-                started[server.id] = print
+            // `isActive`, not merely present: `watch` returns the moment the
+            // store no longer knows the id, and a finished job left in the map
+            // looks exactly like a running one.
+            if (jobs[server.id]?.isActive != true) {
+                started[server.id] = server
                 jobs[server.id] = watch(server.id)
             }
         }
@@ -177,20 +184,26 @@ class WatchService : Service() {
     }
 
     /**
-     * What a watch job was started with, as one number.
+     * Whether a job started for [before] would be started the same way for
+     * [now]: the address, the credentials, and what to announce.
      *
-     * `lastGoodUrl` is deliberately NOT in here. It is written back by the
-     * client on every successful failover, which re-emits the server list -- so
-     * counting it would restart the job that had just succeeded, forever.
+     * Compared field by field rather than through a hash of them. This is the
+     * only thing that notices an edit at all, so a collision would silently go
+     * on using a password the user has already corrected -- which is the bug
+     * this test exists to catch, made invisible.
+     *
+     * `lastGoodUrl` is deliberately not here. The client writes it back on every
+     * successful failover, which re-emits the server list, which would restart
+     * the job that had just succeeded -- forever.
      */
-    private fun watchPrint(server: Server): Int = listOf(
-        server.urls.joinToString("\n"),
-        server.username,
-        server.password,
-        server.notifyEnabled,
-        server.notifyNeedsYou,
-        server.notifyFinished,
-    ).joinToString("|").hashCode()
+    private fun sameWatch(before: Server?, now: Server): Boolean =
+        before != null &&
+            before.urls == now.urls &&
+            before.username == now.username &&
+            before.password == now.password &&
+            before.notifyEnabled == now.notifyEnabled &&
+            before.notifyNeedsYou == now.notifyNeedsYou &&
+            before.notifyFinished == now.notifyFinished
 
     private suspend fun restartAll() = jobsLock.withLock {
         val running = jobs.keys.toList()
@@ -381,8 +394,11 @@ class WatchService : Service() {
             .setPriority(NotificationCompat.PRIORITY_MIN)
             .setContentIntent(openApp)
         // Expanded, each server says its own numbers, which is the only place an
-        // aggregate can be taken apart again.
-        if (notice.detail.isNotEmpty()) {
+        // aggregate can be taken apart again -- but only when that is more than
+        // the line above it. With one server and nothing running, the two are
+        // the same sentence, and pulling it open would cost shade height to be
+        // told again what it already said.
+        if (notice.detail.isNotEmpty() && notice.detail != notice.summary) {
             builder.setStyle(NotificationCompat.BigTextStyle().bigText(notice.detail))
         }
         return builder.build()

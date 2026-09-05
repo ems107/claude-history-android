@@ -1,5 +1,6 @@
 package io.github.ems107.claudehistory.net
 
+import android.util.Log
 import io.github.ems107.claudehistory.data.Server
 import io.github.ems107.claudehistory.data.ServerStore
 import kotlinx.coroutines.Dispatchers
@@ -21,7 +22,6 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.IOException
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicReference
 
 /**
  * How this app talks to a claude-history server. The whole contract it depends
@@ -106,13 +106,20 @@ class ServerClient(private val store: ServerStore) {
     /**
      * Find an address that answers, make sure we are signed in on it, and say
      * what happened in words a person can act on.
+     *
+     * Everything it does is a blocking call inside one `withContext`, with no
+     * suspension point anywhere in the loop -- so cancelling the coroutine does
+     * not stop it, and [InFlight] is what does.
      */
     suspend fun connect(server: Server): Connection = withContext(Dispatchers.IO) {
         if (server.urls.isEmpty()) return@withContext Connection.Unreachable("No address configured.")
 
+        val inFlight = InFlight()
+        coroutineContext.job.invokeOnCompletion { inFlight.cancel() }
+
         var lastFailure: String? = null
         for (base in server.candidates()) {
-            val status = readStatus(base) { lastFailure = it } ?: continue
+            val status = readStatus(inFlight, base) { lastFailure = it } ?: continue
 
             store.rememberGoodUrl(server.id, base)
 
@@ -132,13 +139,13 @@ class ServerClient(private val store: ServerStore) {
             }
             if (status.authenticated) return@withContext Connection.Ready(base)
 
-            return@withContext login(server, base)
+            return@withContext login(inFlight, server, base)
         }
         Connection.Unreachable(lastFailure ?: "No address answered.")
     }
 
-    private fun readStatus(base: String, onFailure: (String) -> Unit): AuthStatus? = try {
-        prober.newCall(getRequest(base, "/api/auth/status")).execute().use { response ->
+    private fun readStatus(inFlight: InFlight, base: String, onFailure: (String) -> Unit): AuthStatus? = try {
+        inFlight.start(prober.newCall(getRequest(base, "/api/auth/status"))).execute().use { response ->
             val body = response.body.string()
             if (!response.isSuccessful) {
                 onFailure(base + " answered HTTP " + response.code)
@@ -155,7 +162,7 @@ class ServerClient(private val store: ServerStore) {
         null
     }
 
-    private fun login(server: Server, base: String): Connection {
+    private fun login(inFlight: InFlight, server: Server, base: String): Connection {
         val payload = json.encodeToString(LoginRequest(server.username, server.password))
         val origin = base.trimEnd('/')
         val request = Request.Builder()
@@ -167,7 +174,7 @@ class ServerClient(private val store: ServerStore) {
             .build()
 
         return try {
-            http.newCall(request).execute().use { response ->
+            inFlight.start(http.newCall(request)).execute().use { response ->
                 val body = response.body.string()
                 if (response.isSuccessful) return Connection.Ready(base)
                 val error = runCatching { json.decodeFromString<ApiError>(body) }.getOrNull()
@@ -193,23 +200,17 @@ class ServerClient(private val store: ServerStore) {
      * An authenticated GET, signing in again once if the session has gone. What
      * everything that READS a server goes through, as opposed to merely reaching
      * one.
-     *
-     * Cancelling the coroutine closes the socket, the way [streamEvents] already
-     * does: `execute()` is a blocking read on a 20-second fuse that does not
-     * notice cancellation by itself, so without this a job being replaced -- a
-     * network arriving, a server deleted -- holds up whoever is waiting to join
-     * it for as long as that fuse.
      */
     suspend fun getText(server: Server, base: String, path: String): String? =
         withContext(Dispatchers.IO) {
-            val inFlight = AtomicReference<Call?>(null)
-            coroutineContext.job.invokeOnCompletion { inFlight.get()?.cancel() }
+            val inFlight = InFlight()
+            coroutineContext.job.invokeOnCompletion { inFlight.cancel() }
             try {
-                var result = call(base, path, inFlight)
+                var result = call(inFlight, base, path)
                 if (result.first == 401) {
                     jar.forget(base)
-                    if (login(server, base) !is Connection.Ready) return@withContext null
-                    result = call(base, path, inFlight)
+                    if (login(inFlight, server, base) !is Connection.Ready) return@withContext null
+                    result = call(inFlight, base, path)
                 }
                 if (result.first == 200) result.second else null
             } catch (_: IOException) {
@@ -217,14 +218,48 @@ class ServerClient(private val store: ServerStore) {
             }
         }
 
-    private fun call(base: String, path: String, inFlight: AtomicReference<Call?>): Pair<Int, String?> =
-        http.newCall(getRequest(base, path)).also(inFlight::set)
+    private fun call(inFlight: InFlight, base: String, path: String): Pair<Int, String?> =
+        inFlight.start(http.newCall(getRequest(base, path)))
             .execute().use { it.code to it.body.string() }
 
+    /**
+     * The call a coroutine has in flight, and the way to close it.
+     *
+     * `execute()` is a blocking read on a fuse of between three and twenty
+     * seconds, and it does not notice that the coroutine around it was
+     * cancelled. Without this, cancelling a watch job -- a server edited, a
+     * network arriving, the last server deleted -- waits out the whole fuse
+     * while holding the lock every other server's job is queued behind, and
+     * three dead addresses in a row make that twenty-four seconds.
+     *
+     * It REMEMBERS having been cancelled, because these calls come in sequence:
+     * a sign-in that follows a 401, and the read that follows the sign-in, are
+     * started after the cancellation arrived. Closing only whichever call
+     * happened to be registered at that instant would leave the next one to run
+     * to the end, which is the shape of the bug this replaced.
+     */
+    private class InFlight {
+        private var current: Call? = null
+        private var cancelled = false
+
+        /** Hand back the call, already closed if there is nobody left to want it. */
+        @Synchronized
+        fun start(call: Call): Call {
+            current = call
+            if (cancelled) call.cancel()
+            return call
+        }
+
+        @Synchronized
+        fun cancel() {
+            cancelled = true
+            current?.cancel()
+        }
+    }
     /** The bell, whole: what has stopped and is still open, newest first. */
     suspend fun notifications(server: Server, base: String): List<StoppedRow>? {
         val body = getText(server, base, "/api/notifications") ?: return null
-        return runCatching { json.decodeFromString<StoppedList>(body).stopped }.getOrNull()
+        return decode("the bell", body) { json.decodeFromString<StoppedList>(body).stopped }
     }
 
     /**
@@ -236,13 +271,30 @@ class ServerClient(private val store: ServerStore) {
      */
     suspend fun live(server: Server, base: String): List<LiveRow>? {
         val body = getText(server, base, "/api/live") ?: return null
-        return runCatching { json.decodeFromString<List<LiveRow>>(body) }.getOrNull()
+        return decode("the live list", body) { json.decodeFromString<List<LiveRow>>(body) }
     }
 
     /** The server's own notification preferences, which ours inherit. */
     suspend fun serverSettings(server: Server, base: String): ServerSettings? {
         val body = getText(server, base, "/api/settings") ?: return null
-        return runCatching { json.decodeFromString<ServerSettings>(body) }.getOrNull()
+        return decode("the settings", body) { json.decodeFromString<ServerSettings>(body) }
+    }
+
+    /**
+     * Read one of those answers, and SAY SO if it cannot be read.
+     *
+     * Swallowing this was the quietest failure in the app. A shape we did not
+     * expect -- a field gone explicitly null, a vocabulary that grew -- would
+     * make the whole answer null, and every caller treats null as "the server
+     * did not say", which is what an unreachable machine also looks like. The
+     * counts would freeze and the bell would go silent with nothing in logcat,
+     * which is the one place there is to look.
+     */
+    private fun <T> decode(what: String, body: String, parse: () -> T): T? = try {
+        parse()
+    } catch (e: Exception) {
+        Log.w(TAG, "could not read " + what + " (" + body.take(200) + ")", e)
+        null
     }
 
     /**
@@ -251,9 +303,9 @@ class ServerClient(private val store: ServerStore) {
      *
      * Parsed by hand rather than with a library: the format is `data: {...}` and
      * a blank line, and the whole reason this connection exists is one event out
-     * of a dozen. The read timeout has to be zero -- the stream is silent by
-     * design between things happening, with a heartbeat every 25 seconds that is
-     * also what keeps a NAT from dropping it.
+     * of a dozen. It is read with a long timeout rather than none at all -- see
+     * [streamer], where the difference between a silent stream and a dead one is
+     * the whole argument.
      */
     suspend fun streamEvents(base: String, onEvent: (String) -> Unit) = withContext(Dispatchers.IO) {
         val call = streamer.newCall(getRequest(base, "/api/events"))
@@ -301,6 +353,9 @@ class ServerClient(private val store: ServerStore) {
     companion object {
         const val SESSION_COOKIE = "ch_session"
         private val JSON_MEDIA = "application/json; charset=utf-8".toMediaType()
+
+        /** The same tag the watching service uses: one log to read, not two. */
+        private const val TAG = "claude-history"
     }
 }
 

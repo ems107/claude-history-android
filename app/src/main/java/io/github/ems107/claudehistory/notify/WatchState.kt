@@ -104,12 +104,20 @@ class WatchState {
         )
     }
 
-    fun counted(serverId: String, counts: LiveCounts) = write(serverId) { before ->
-        before?.copy(counts = counts) ?: ServerLive(CONNECTED, connected = true, counts = counts)
-    }
+    /**
+     * The two that say ONE thing each, and know nothing about the rest.
+     *
+     * A row that is not there belongs to a server nobody is watching any more --
+     * the job cancelled, the server deleted -- and inventing the other fields in
+     * order to carry this one would put a card back on the screen claiming a
+     * connection that does not exist. So they patch, or they do nothing.
+     */
+    fun counted(serverId: String, counts: LiveCounts) = patch(serverId) { it.copy(counts = counts) }
 
-    fun muted(serverId: String, muted: Boolean) = write(serverId) { before ->
-        before?.copy(muted = muted) ?: ServerLive(STARTING, muted = muted)
+    fun muted(serverId: String, muted: Boolean) = patch(serverId) { it.copy(muted = muted) }
+
+    private fun patch(serverId: String, change: (ServerLive) -> ServerLive) {
+        _servers.update { all -> all[serverId]?.let { all + (serverId to change(it)) } ?: all }
     }
 
     fun forget(serverId: String) {

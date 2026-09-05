@@ -54,6 +54,13 @@ data class StopPreview(
 )
 
 /**
+ * The one preview kind whose text is its own headline, and the only one this app
+ * has to tell apart. It lives here with the shape it describes, like every other
+ * value that comes off the wire.
+ */
+const val PREVIEW_ERROR = "error"
+
+/**
  * One session that has stopped: a row of the bell, and everything a
  * notification needs to be drawn without a second request.
  *

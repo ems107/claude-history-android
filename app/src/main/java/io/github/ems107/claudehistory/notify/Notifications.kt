@@ -14,6 +14,7 @@ import io.github.ems107.claudehistory.data.EffectiveNotify
 import io.github.ems107.claudehistory.data.Server
 import io.github.ems107.claudehistory.net.KIND_FINISHED
 import io.github.ems107.claudehistory.net.KIND_NEEDS_YOU
+import io.github.ems107.claudehistory.net.PREVIEW_ERROR
 import io.github.ems107.claudehistory.net.StopPreview
 import io.github.ems107.claudehistory.net.StoppedRow
 import java.util.concurrent.ConcurrentHashMap
@@ -120,10 +121,14 @@ class Reconciler(private val context: Context) {
         // Gone from the server is gone from the phone. This is the half that
         // makes attending a session at the desk clear the notification here.
         val prefix = server.id + "|"
-        shown.keys.filter { it.startsWith(prefix) && it !in wantedByKey }.forEach { key ->
-            Log.i(TAG, "withdrew " + key)
+        // Both maps, not only the drawn one. Swiping moves a key OUT of `shown`
+        // and into `acknowledged`, so a sweep that walked `shown` alone left one
+        // entry behind per attended session, for the life of a process that is
+        // meant to run for days -- and with it the rule that this exact stop is
+        // never to be raised again, long after the bell forgot it.
+        (shown.keys + acknowledged.keys).filter { it.startsWith(prefix) && it !in wantedByKey }.forEach { key ->
+            if (shown.remove(key) != null) Log.i(TAG, "withdrew " + key)
             manager.cancel(Notifications.idOf(key))
-            shown.remove(key)
             acknowledged.remove(key)
         }
 
@@ -332,9 +337,9 @@ class Reconciler(private val context: Context) {
      * on one line and what the model said it was doing on the next is the shape
      * of the thing rather than spacing.
      */
-    private fun tidy(text: String): String = text
-        .map { if (it == '\n' || !it.isISOControl()) it else ' ' }
-        .joinToString("")
+    private fun tidy(text: String): String = buildString(text.length) {
+        for (c in text) append(if (c == '\n' || !c.isISOControl()) c else ' ')
+    }
         .lines()
         .map { it.trimEnd() }
         .filter { it.isNotEmpty() }
@@ -342,9 +347,6 @@ class Reconciler(private val context: Context) {
 
     private companion object {
         const val TAG = "claude-history"
-
-        /** The one preview kind whose text arrives with no headline of its own. */
-        const val PREVIEW_ERROR = "error"
 
         /** Roughly what an expanded notification draws before it runs out of shade. */
         const val QUOTE_MAX = 300
