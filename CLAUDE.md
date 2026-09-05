@@ -44,6 +44,26 @@ Same as the server repo, and for the same reasons:
 - **A written plan gets its own branch**, named after what it implements, merged with `git merge --no-ff` and a subject that names the thing rather than the branch. **Only the user closes a plan**, after using it.
 - **No pull requests.** Nobody else reviews this repo.
 
+## Verifying
+
+There is no test suite. It is checked against a real server and a real phone — an Urovo DT50 on Android 9, reached over `adb connect`, with screenshots for anything visual. What has been proved, and how, so nothing is re-argued from memory:
+
+| Check | How, and what it turned on |
+| --- | --- |
+| Signing in | the server's own log must say `failed login`, not `refused a cross-origin POST` — that is what proves the `Origin` header is going out |
+| The viewer | the session list must draw **with its sidebar**. An empty page under a perfect header is the WebView `LayoutParams` bug, not a network one |
+| Failover | put a dead address first; the server must answer on the second, and a *wrong password* reply proves it got there |
+| A stop arriving | open a session through the composer with `model: haiku`, let it finish, watch for `raised finished` in logcat |
+| `needs-you` | ask that session to use `AskUserQuestion`; the notification must land on the high-importance channel carrying the CLI's own `waitingFor` |
+| The mirror, both ways | `POST /api/notifications/dismiss` on the server withdraws it from the phone; opening the session **from** the phone empties the bell |
+| **Doze** | `input keyevent 223`, `dumpsys battery unplug`, `dumpsys deviceidle force-idle`, then trigger a stop. `mWakefulness=Dozing`, `mScreenOn=false`, `mCharging=false` and `mState=IDLE` must hold **before and after**. Measured: the notification arrived **5 s** after the prompt, through deep idle. Always `unforce` and `battery reset` afterwards |
+| Updating | cut two releases and let the app cross between them; expect Play Protect (see the README) |
+
+Two things the DT50 cannot check, so do not waste time trying:
+
+- **The old-WebView warning.** Its only valid provider is Chrome 138 — `cmd webviewupdate set-webview-implementation` refuses the system stub — so the banner's positive case has no device here.
+- **Coming back after a reboot.** `persist.adb.tcp.port` is unset, so a reboot takes the adb connection with it.
+
 ## What is built, and what is not
 
-0.1.0 is the scaffold: it compiles, installs and shows its own version. The server list, the viewer, the notification service and the self-update are landing one at a time — see the README for what a version actually does.
+0.1.3 has all four halves: the server list, the viewer, the notification service and the self-update. See the README for what a version actually does.
