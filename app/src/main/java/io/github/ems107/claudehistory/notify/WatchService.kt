@@ -199,7 +199,20 @@ class WatchService : Service() {
                 val bell = Channel<Unit>(Channel.CONFLATED)
                 val live = Channel<Unit>(Channel.CONFLATED)
                 val readers = listOf(
-                    launch { for (unused in bell) sync(serverId, base) },
+                    launch {
+                        for (unused in bell) {
+                            sync(serverId, base)
+                            // A stop IS a change of status, but the server only
+                            // announces `live-changed` for what it can see in
+                            // the pid files -- and a composer session of its own
+                            // putting a permission on screen is not in there. It
+                            // moves the bell and nothing else, and without this
+                            // the card would go on saying "working" about a
+                            // session that is waiting for you, which is the one
+                            // number that must never be wrong.
+                            live.trySend(Unit)
+                        }
+                    },
                     launch {
                         for (unused in live) {
                             // Answering a permission flips busy and waiting back
