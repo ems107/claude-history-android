@@ -33,12 +33,20 @@ import kotlinx.coroutines.flow.MutableStateFlow
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // Android 15 forces this on any app targeting API 35 or later and Android
-        // 16 took the opt-out away, so the window draws behind the status and
-        // navigation bars whether we ask for it or not. Asking for it is what
-        // makes the SAME thing happen on API 28, where the decor would otherwise
-        // pad the content and hide every inset bug from the one device there is
-        // to test on.
+        // This line looks redundant and is not: DELETING IT COSTS THE ONLY WAY TO
+        // TEST WHAT IT DOES. Android 15 imposes edge to edge on anything
+        // targeting API 35 or later and Android 16 took the opt-out away, so on a
+        // modern phone the window draws behind the status and navigation bars
+        // whatever this code says -- and the app, not the decor, is what has to
+        // keep clear of them. Asking for it makes API 28 do the same, which is
+        // the difference between an inset bug showing up on the DT50 sitting on
+        // the desk and one showing up on a Galaxy nobody here can attach to.
+        //
+        // What follows from it: every screen pads itself. Material3 `Scaffold`
+        // and `TopAppBar` do that for the three list-shaped ones -- which is the
+        // only reason they were never broken -- and the viewer, whose bar is
+        // hand-built, does it by hand. Anything new drawn at an edge of the
+        // window is the same job again.
         enableEdgeToEdge()
         WebViewCache.enableDebugging()
         Notifications.ensureChannels(this)
