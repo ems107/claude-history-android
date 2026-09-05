@@ -48,6 +48,15 @@ android {
             isMinifyEnabled = false
             signingConfig = signingConfigs.findByName("release")
         }
+        debug {
+            // Signed with the release key when there is one, and that is not a
+            // convenience: Android refuses to install over an app whose
+            // signature differs, so a debug build carrying the debug key can
+            // only be replaced by a release APK after UNINSTALLING it -- which
+            // takes the configured servers and their passwords with it, because
+            // the key that encrypted them lives and dies with the install.
+            signingConfigs.findByName("release")?.let { signingConfig = it }
+        }
     }
 
     compileOptions {

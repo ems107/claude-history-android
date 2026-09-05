@@ -284,6 +284,13 @@ object WebViewCache {
     private class ServerWebViewClient(private val id: String) : WebViewClient() {
         override fun onPageFinished(view: WebView, url: String) {
             view.evaluateJavascript(WIDE_VIEWPORT, null)
+            // Not cosmetic: claude-history withdraws a session's row from the
+            // bell only while the page is visible AND has the focus, so a
+            // WebView nobody has touched yet reads as "nobody is looking".
+            // Opening a session from a notification is exactly the case where
+            // somebody IS -- and without this the row stayed up on every other
+            // device after you had already dealt with it on the phone.
+            view.requestFocus()
         }
 
         override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
