@@ -65,9 +65,9 @@ What has been proved, and how, so nothing is re-argued from memory:
 | A stop arriving | open a session through the composer with `model: haiku`, let it finish, watch for `raised finished` in logcat |
 | `needs-you` | ask that session to use `AskUserQuestion`; the notification must land on the high-importance channel carrying the CLI's own `waitingFor` |
 | The mirror, both ways | `POST /api/notifications/dismiss` on the server withdraws it from the phone; opening the session **from** the phone empties the bell |
-| Counts, live | start a session on the server's machine: the card goes to `1 working` and the notice to the aggregate **with nobody touching the phone**. Provoke a permission → `1 waiting`. Close the terminal → it drops. `live on <server>` in logcat is the count that was believed |
+| Counts, live | start a session on the server's machine: the card goes to `1 working` and the notice to the aggregate **with nobody touching the phone**. Provoke a permission → `1 waiting`. Close the terminal → it drops. `live on <server>` in logcat is the count that was believed. Measured on the DT50: two `claude.exe` on the machine drew `1 working · 1 idle`, checked against `tasklist`, and the numbers moved twice on their own as a process came and went |
 | Nothing open | with no `claude` anywhere, the card must show **no counts line at all** — not `0 idle` |
-| A `--print` run | it registers a pid and reports no status, so it must count as none of the three: logcat says `(1 not saying)` and the numbers do not move |
+| A `--print` run | it registers a pid and reports no status, so it must count as none of the three. Measured: `live on Sobremesa: 1 working, 1 idle (1 not saying)` while it ran, and the visible numbers never moved |
 | A muted server | still connects, still counts, still says `· muted`, and raises **nothing** |
 | The quote | expand a `needs-you`: collapsed is still `Waiting for you — …`, expanded gains the tool and the command. Needs a server new enough to send `preview` — 1.19.2 does not |
 | The quote does not buzz twice | the delicate one: the quote arrives on a **second** event. logcat must read `raised` then `redrew`, and the phone must vibrate **once** |
