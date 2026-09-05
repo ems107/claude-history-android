@@ -4,7 +4,7 @@ An Android app that puts [claude-history](https://github.com/ems107/claude-histo
 
 That last part is the whole reason this exists. claude-history has a bell, tones and a narrator, but not a single system notification — `Notification` is secure-context only, so it works on `127.0.0.1` and not on `http://<lan-ip>:7433`, which is exactly the address remote access is for. This app is the piece that was missing.
 
-> **Status: all four halves are in.** The server list, the viewer, the notification service and the self-update all work and have been used against real servers. What is still owed is time rather than code: a night on a phone that is not the rugged handheld it was developed on, and a reboot to prove it comes back by itself.
+> **Status: all four halves are in, and in use.** The server list, the viewer, the notification service and the self-update all work against real servers — on the rugged handheld this was developed on and on a current Galaxy. What comes from here is a fix or an addition on top of that, rather than another half arriving. The one thing still taken on trust is that it comes back by itself after a restart.
 
 ## What it does
 
