@@ -131,7 +131,7 @@ class Reconciler(private val context: Context) {
         wantedByKey.forEach { (key, row) ->
             if (acknowledged[key] == row.at) return@forEach
             val before = shown[key]
-            val print = print(server, row)
+            val print = fingerprint(server, row)
             if (before?.at == row.at && before.print == print) return@forEach
 
             val id = Notifications.idOf(key)
@@ -196,7 +196,7 @@ class Reconciler(private val context: Context) {
      * a title improves as the session gets indexed -- and a notification is
      * worth redrawing when it would LOOK different, not when the JSON differs.
      */
-    private fun print(server: Server, row: StoppedRow): Int =
+    private fun fingerprint(server: Server, row: StoppedRow): Int =
         listOf(title(row), describe(row), subText(server, row), bigText(row)).joinToString(" ").hashCode()
 
     private fun post(server: Server, key: String, row: StoppedRow, quietly: Boolean): Boolean {
@@ -317,7 +317,9 @@ class Reconciler(private val context: Context) {
         val body = full.take(QUOTE_MAX).lines().take(QUOTE_LINES).joinToString("\n").trimEnd()
         if (headline == null && body.isEmpty()) return ""
         val note = if (preview.truncated || body.length < full.length) {
-            "— cut at " + body.length + " of " + preview.chars + " characters"
+            // `chars` has a default like every field here, so a server that
+            // stopped sending it would otherwise say "of 0 characters".
+            "— cut at " + body.length + " of " + maxOf(preview.chars, full.length) + " characters"
         } else {
             null
         }

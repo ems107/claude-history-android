@@ -27,11 +27,11 @@ data class LiveCounts(val waiting: Int, val working: Int, val idle: Int) {
      * are zero, which is a sentence the caller has to write for itself: what
      * "nothing" means differs between a line in a list and a line in a notice.
      */
-    fun say(separator: String = ", "): String = buildList {
+    fun say(): String = buildList {
         if (waiting > 0) add("$waiting waiting")
         if (working > 0) add("$working working")
         if (idle > 0) add("$idle idle")
-    }.joinToString(separator)
+    }.joinToString(", ")
 
     operator fun plus(other: LiveCounts): LiveCounts =
         LiveCounts(waiting + other.waiting, working + other.working, idle + other.idle)

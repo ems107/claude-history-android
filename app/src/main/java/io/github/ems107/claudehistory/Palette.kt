@@ -98,9 +98,9 @@ private val WaitingOnPaper = Color(0xFFB45309)
 private val WaitingOnInk = Color(0xFFFBBF24)
 
 /** Signed in. */
-val ok: Color
+val Ok: Color
     @Composable get() = if (isSystemInDarkTheme()) OkOnInk else OkOnPaper
 
 /** A dialog is on screen and nothing moves until somebody answers it. */
-val waiting: Color
+val Waiting: Color
     @Composable get() = if (isSystemInDarkTheme()) WaitingOnInk else WaitingOnPaper

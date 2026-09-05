@@ -29,12 +29,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import io.github.ems107.claudehistory.Ok
+import io.github.ems107.claudehistory.Waiting
 import io.github.ems107.claudehistory.data.Server
 import io.github.ems107.claudehistory.net.Connection
 import io.github.ems107.claudehistory.notify.LiveCounts
 import io.github.ems107.claudehistory.notify.ServerLive
-import io.github.ems107.claudehistory.ok
-import io.github.ems107.claudehistory.waiting
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -162,14 +162,14 @@ private fun ServerCard(
 private fun StateLine(state: Connection?, live: ServerLive?, busy: Boolean) {
     val (text, colour) = when {
         live != null -> live.connection to when {
-            live.connected -> ok
+            live.connected -> Ok
             live.refused -> MaterialTheme.colorScheme.error
             else -> MaterialTheme.colorScheme.onSurfaceVariant
         }
 
         busy && state == null -> "Checking..." to MaterialTheme.colorScheme.onSurfaceVariant
         state == null -> "Not checked yet" to MaterialTheme.colorScheme.onSurfaceVariant
-        state is Connection.Ready -> "Signed in" to ok
+        state is Connection.Ready -> "Signed in" to Ok
         state is Connection.Refused -> state.short to MaterialTheme.colorScheme.error
         state is Connection.Unreachable -> "Not reachable" to MaterialTheme.colorScheme.onSurfaceVariant
         else -> "" to MaterialTheme.colorScheme.onSurfaceVariant
@@ -195,7 +195,7 @@ private fun StateLine(state: Connection?, live: ServerLive?, busy: Boolean) {
 @Composable
 private fun CountsLine(counts: LiveCounts, modifier: Modifier = Modifier) {
     val parts = buildList {
-        if (counts.waiting > 0) add("${counts.waiting} waiting" to waiting)
+        if (counts.waiting > 0) add("${counts.waiting} waiting" to Waiting)
         if (counts.working > 0) add("${counts.working} working" to MaterialTheme.colorScheme.primary)
         if (counts.idle > 0) add("${counts.idle} idle" to MaterialTheme.colorScheme.onSurfaceVariant)
     }

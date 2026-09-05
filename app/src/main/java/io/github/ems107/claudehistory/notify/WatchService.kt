@@ -306,11 +306,11 @@ class WatchService : Service() {
         val server = graph.store.get(serverId) ?: return
         val rows = graph.client.live(server, base) ?: return
         val counts = LiveCounts.of(rows)
-        val mute = rows.size - counts.total
+        val unsaid = rows.size - counts.total
         Log.i(
             TAG,
             "live on " + server.label() + ": " + counts.say().ifEmpty { "nothing open" } +
-                if (mute > 0) " (" + mute + " not saying)" else "",
+                if (unsaid > 0) " (" + unsaid + " not saying)" else "",
         )
         graph.watch.counted(serverId, counts)
     }
