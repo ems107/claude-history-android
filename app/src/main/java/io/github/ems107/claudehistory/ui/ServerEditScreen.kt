@@ -2,6 +2,7 @@ package io.github.ems107.claudehistory.ui
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -24,13 +25,16 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import io.github.ems107.claudehistory.data.Server
+import io.github.ems107.claudehistory.data.Toggle
 import io.github.ems107.claudehistory.net.Connection
 
 /**
@@ -55,6 +59,9 @@ fun ServerEditScreen(
     var username by remember { mutableStateOf(existing?.username.orEmpty()) }
     var password by remember { mutableStateOf(existing?.password.orEmpty()) }
     var showPassword by remember { mutableStateOf(false) }
+    var notifyEnabled by remember { mutableStateOf(existing?.notifyEnabled ?: Toggle.INHERIT) }
+    var notifyNeedsYou by remember { mutableStateOf(existing?.notifyNeedsYou ?: Toggle.INHERIT) }
+    var notifyFinished by remember { mutableStateOf(existing?.notifyFinished ?: Toggle.INHERIT) }
 
     val states by viewModel.states.collectAsState()
     val connecting by viewModel.connecting.collectAsState()
@@ -69,6 +76,9 @@ fun ServerEditScreen(
         username = username.trim(),
         password = password,
         lastGoodUrl = existing?.lastGoodUrl,
+        notifyEnabled = notifyEnabled,
+        notifyNeedsYou = notifyNeedsYou,
+        notifyFinished = notifyFinished,
     )
 
     Scaffold(
@@ -130,6 +140,20 @@ fun ServerEditScreen(
                 modifier = Modifier.fillMaxWidth(),
             )
 
+            Text(
+                "Notifications",
+                style = MaterialTheme.typography.titleSmall,
+                modifier = Modifier.padding(top = 8.dp),
+            )
+            Text(
+                "Inherit means whatever that server's own settings say, which is normally what you want.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            TriToggle("Notify me at all", notifyEnabled) { notifyEnabled = it }
+            TriToggle("Waiting for you", notifyNeedsYou) { notifyNeedsYou = it }
+            TriToggle("Finished", notifyFinished) { notifyFinished = it }
+
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(
                     onClick = { viewModel.save(draft()) },
@@ -180,3 +204,38 @@ fun normalizeAddresses(text: String): List<String> =
         .filter { it.isNotEmpty() }
         .map { if (it.startsWith("http://") || it.startsWith("https://")) it else "http://$it" }
         .distinct()
+
+/**
+ * Three words, one of which is on. Written by hand rather than with a segmented
+ * button because the middle state is the interesting one -- "whatever the server
+ * says" is a real answer, not the absence of one -- and it deserves to read as a
+ * choice rather than as an empty control.
+ */
+@Composable
+private fun TriToggle(label: String, value: Toggle, onChange: (Toggle) -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(label, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+        Toggle.entries.forEach { option ->
+            val selected = option == value
+            TextButton(onClick = { onChange(option) }, contentPadding = PaddingValues(horizontal = 8.dp)) {
+                Text(
+                    when (option) {
+                        Toggle.INHERIT -> "Inherit"
+                        Toggle.ON -> "On"
+                        Toggle.OFF -> "Off"
+                    },
+                    style = MaterialTheme.typography.labelLarge,
+                    color = if (selected) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                )
+            }
+        }
+    }
+}

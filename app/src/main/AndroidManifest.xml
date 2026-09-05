@@ -4,6 +4,14 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
+    <!-- Everything below is for the one thing the web app cannot do itself. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+
     <application
         android:name=".ClaudeHistoryApp"
         android:allowBackup="false"
@@ -19,12 +27,41 @@
             android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize|uiMode|density|fontScale"
             android:exported="true"
             android:label="@string/app_name"
+            android:launchMode="singleTask"
             android:theme="@style/Theme.ClaudeHistory">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!--
+          `specialUse` on API 34+ rather than `dataSync`, which Android 15 caps at
+          roughly six hours a day: what this service does is hold a connection for
+          as long as the phone is on, and a cap would silently end that every
+          afternoon. `dataSync` stays declared for 29..33, where `specialUse` does
+          not exist yet, and API 28 needs no type at all.
+        -->
+        <service
+            android:name=".notify.WatchService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync|specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Holds a connection to the user's own claude-history servers so that a session which stops can raise a notification on this phone." />
+        </service>
+
+        <receiver
+            android:name=".notify.BootReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
+
+        <receiver
+            android:name=".notify.DismissReceiver"
+            android:exported="false" />
     </application>
 
 </manifest>

@@ -3,8 +3,12 @@ package io.github.ems107.claudehistory.net
 import io.github.ems107.claudehistory.data.Server
 import io.github.ems107.claudehistory.data.ServerStore
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.job
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.Cookie
 import okhttp3.CookieJar
 import okhttp3.HttpUrl
@@ -80,6 +84,11 @@ class ServerClient(private val store: ServerStore) {
     private val prober = http.newBuilder()
         .connectTimeout(3, TimeUnit.SECONDS)
         .readTimeout(5, TimeUnit.SECONDS)
+        .build()
+
+    /** No read timeout: the event stream is silent by design between events. */
+    private val streamer = http.newBuilder()
+        .readTimeout(0, TimeUnit.MILLISECONDS)
         .build()
 
     /**
@@ -190,6 +199,54 @@ class ServerClient(private val store: ServerStore) {
 
     private fun call(base: String, path: String): Pair<Int, String?> =
         http.newCall(getRequest(base, path)).execute().use { it.code to it.body.string() }
+
+    /** The bell, whole: what has stopped and is still open, newest first. */
+    suspend fun notifications(server: Server, base: String): List<StoppedRow>? {
+        val body = getText(server, base, "/api/notifications") ?: return null
+        return runCatching { json.decodeFromString<StoppedList>(body).stopped }.getOrNull()
+    }
+
+    /** The server's own notification preferences, which ours inherit. */
+    suspend fun serverSettings(server: Server, base: String): ServerSettings? {
+        val body = getText(server, base, "/api/settings") ?: return null
+        return runCatching { json.decodeFromString<ServerSettings>(body) }.getOrNull()
+    }
+
+    /**
+     * Follow the server's event stream until it ends or the caller is cancelled,
+     * handing over the `type` of every event that arrives.
+     *
+     * Parsed by hand rather than with a library: the format is `data: {...}` and
+     * a blank line, and the whole reason this connection exists is one event out
+     * of a dozen. The read timeout has to be zero -- the stream is silent by
+     * design between things happening, with a heartbeat every 25 seconds that is
+     * also what keeps a NAT from dropping it.
+     */
+    suspend fun streamEvents(base: String, onEvent: (String) -> Unit) = withContext(Dispatchers.IO) {
+        val call = streamer.newCall(getRequest(base, "/api/events"))
+        // A blocking read does not notice cancellation; closing the call is what
+        // makes it return.
+        coroutineContext.job.invokeOnCompletion { call.cancel() }
+        try {
+            call.execute().use { response ->
+                if (!response.isSuccessful) return@use
+                val source = response.body.source()
+                while (isActive && !source.exhausted()) {
+                    val line = source.readUtf8LineStrict()
+                    if (!line.startsWith("data:")) continue
+                    val payload = line.removePrefix("data:").trim()
+                    val type = runCatching {
+                        json.parseToJsonElement(payload).jsonObject["type"]?.jsonPrimitive?.content
+                    }.getOrNull()
+                    if (type != null) onEvent(type)
+                }
+            }
+        } catch (_: IOException) {
+            // The stream ending is the normal way out of here, not an error:
+            // the caller reconnects.
+        } catch (_: IllegalStateException) {
+        }
+    }
 
     /**
      * The session cookie, for the WebView. This is the whole reason the native

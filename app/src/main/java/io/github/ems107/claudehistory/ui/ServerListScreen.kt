@@ -66,6 +66,7 @@ fun ServerListScreen(
                 contentPadding = PaddingValues(12.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
+                item { PermissionsBanner() }
                 items(servers, key = { it.id }) { server ->
                     ServerCard(
                         server = server,
