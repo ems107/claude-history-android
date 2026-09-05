@@ -87,8 +87,15 @@ if ($DryRun) {
 }
 
 git add $gradleFile
-git commit -m "Version $Version"
-if ($LASTEXITCODE -ne 0) { Fail 'The version commit failed.' }
+# The very first release carries a version the file already holds, and `git
+# commit` with nothing staged is an error rather than a no-op.
+$staged = git diff --cached --name-only
+if ($staged) {
+    git commit -m "Version $Version"
+    if ($LASTEXITCODE -ne 0) { Fail 'The version commit failed.' }
+} else {
+    Write-Host 'release: the file already said that version, nothing to commit.' -ForegroundColor DarkGray
+}
 
 # --cleanup=verbatim or git strips every line starting with '#', which is every
 # heading the notes have.
