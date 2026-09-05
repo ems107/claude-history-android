@@ -286,13 +286,27 @@ private data class GhRelease(
         val sums = assets.firstOrNull { it.name == "checksums.txt" }
         return Release(
             version = version,
-            notes = body?.trim().orEmpty(),
+            notes = withoutTitleLine(body?.trim().orEmpty(), version),
             assetName = apk?.name.orEmpty(),
             assetUrl = apk?.url.orEmpty(),
             checksumsUrl = sums?.url,
             sizeBytes = apk?.size ?: 0,
         )
     }
+}
+
+/**
+ * Drop a first line that is only the version.
+ *
+ * The notes are the annotated tag's whole message, whose first line is its
+ * subject — so a tag written the ordinary way opens with `v0.1.1`, directly
+ * under a panel already saying "Version 0.1.1 is available". Said twice, one of
+ * them is noise.
+ */
+private fun withoutTitleLine(notes: String, version: String): String {
+    val first = notes.lineSequence().firstOrNull()?.trim() ?: return notes
+    if (first != version && first != "v$version") return notes
+    return notes.substringAfter('\n', "").trim()
 }
 
 @Serializable

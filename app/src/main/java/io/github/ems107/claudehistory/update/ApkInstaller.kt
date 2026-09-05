@@ -91,9 +91,33 @@ class InstallReceiver : BroadcastReceiver() {
 
             else -> {
                 val message = intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE)
-                Updates.failed(message ?: "The install did not complete.")
+                Updates.failed(explain(message))
             }
         }
+    }
+
+    /**
+     * Android's own words, except where they are a constant name nobody can act
+     * on.
+     *
+     * `INSTALL_FAILED_VERIFICATION_FAILURE` is the one that matters, and it is
+     * not a bug in the download: it is Play Protect refusing an app it has never
+     * seen. Measured on a GMS device — Google's scan answered
+     * `POTENTIALLY_UNWANTED / generic_malware` for this very APK, which is the
+     * standard false positive for a sideloaded app that asks to install
+     * packages, since that is exactly what a dropper does. The way through is on
+     * Play Protect's own dialog, and saying so is the difference between a dead
+     * end and a click.
+     */
+    private fun explain(message: String?): String = when {
+        message.isNullOrBlank() -> "The install did not complete."
+        message.contains("VERIFICATION_FAILURE") || message.contains("VERIFICATION_TIMEOUT") ->
+            "Google Play Protect blocked the install. It does that to apps it has not seen " +
+                "before, and this one asks to install packages — the pattern it is most " +
+                "suspicious of. On its dialog, open \"More details\" and choose \"Install " +
+                "without scanning\"; you will be asked for your fingerprint or PIN."
+
+        else -> message
     }
 
     companion object {
