@@ -130,7 +130,7 @@ class WatchState {
     }
 
     companion object {
-        const val CONNECTED = "Connected"
+        const val CONNECTED = "Signed in"
 
         /** No word from the service yet -- it is starting, or it is not running. */
         const val STARTING = "Starting"
