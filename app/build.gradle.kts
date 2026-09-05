@@ -28,8 +28,8 @@ android {
         // The floor is the Urovo DT50 (Android 9), the ceiling a Galaxy S25.
         minSdk = 28
         targetSdk = 36
-        versionCode = 103
-        versionName = "0.1.3"
+        versionCode = 104
+        versionName = "0.1.4"
     }
 
     signingConfigs {
