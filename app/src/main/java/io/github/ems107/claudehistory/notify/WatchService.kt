@@ -72,6 +72,9 @@ class WatchService : Service() {
     private val scope = CoroutineScope(SupervisorJob())
     private val jobs = mutableMapOf<String, Job>()
 
+    /** What each running job was started with, so an edit can restart it. */
+    private val started = mutableMapOf<String, Int>()
+
     /**
      * Both the server list arriving and a network appearing rewrite [jobs], from
      * different coroutines on a multi-threaded dispatcher. Without this they can
@@ -148,17 +151,46 @@ class WatchService : Service() {
         val ids = servers.map { it.id }.toSet()
         jobs.keys.filter { it !in ids }.forEach { gone ->
             jobs.remove(gone)?.cancelAndJoin()
+            started.remove(gone)
             reconciler.forget(gone)
             graph.watch.forget(gone)
         }
         servers.forEach { server ->
-            if (jobs[server.id] == null) jobs[server.id] = watch(server.id)
+            val print = watchPrint(server)
+            // Edited while it was being watched. A job carries the address, the
+            // credentials and the preferences it STARTED with, so a corrected
+            // password used to sit unused until the connection happened to drop,
+            // and a server muted here went on looking unmuted until the next
+            // thing happened over there.
+            if (jobs[server.id] != null && started[server.id] != print) {
+                jobs.remove(server.id)?.cancelAndJoin()
+            }
+            if (jobs[server.id] == null) {
+                started[server.id] = print
+                jobs[server.id] = watch(server.id)
+            }
         }
         if (servers.isEmpty()) {
             reconciler.forgetAll()
             stopSelf()
         }
     }
+
+    /**
+     * What a watch job was started with, as one number.
+     *
+     * `lastGoodUrl` is deliberately NOT in here. It is written back by the
+     * client on every successful failover, which re-emits the server list -- so
+     * counting it would restart the job that had just succeeded, forever.
+     */
+    private fun watchPrint(server: Server): Int = listOf(
+        server.urls.joinToString("\n"),
+        server.username,
+        server.password,
+        server.notifyEnabled,
+        server.notifyNeedsYou,
+        server.notifyFinished,
+    ).joinToString("|").hashCode()
 
     private suspend fun restartAll() = jobsLock.withLock {
         val running = jobs.keys.toList()
