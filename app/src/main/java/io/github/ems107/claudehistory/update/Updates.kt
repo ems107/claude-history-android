@@ -14,9 +14,13 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.Response
 import java.io.File
 import java.io.IOException
 import java.security.MessageDigest
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import java.util.concurrent.TimeUnit
 
 /**
@@ -82,16 +86,21 @@ object Updates {
                 .build()
 
             http.newCall(request).execute().use { response ->
-                prefs.lastCheckAt = System.currentTimeMillis()
-
                 if (response.code == 304) {
+                    prefs.lastCheckAt = System.currentTimeMillis()
                     _state.value = verdictFor(prefs.knownLatest)
                     return@use
                 }
                 if (!response.isSuccessful) {
-                    _state.value = UpdateState.Failed("GitHub answered HTTP ${response.code}.")
+                    // Deliberately WITHOUT touching `lastCheckAt`: a check that
+                    // failed is not a check. Counting it would mean one bad
+                    // moment -- no network as the app opened, GitHub's anonymous
+                    // limit briefly used up -- silencing the update check for a
+                    // whole day.
+                    _state.value = UpdateState.Failed(describe(response))
                     return@use
                 }
+                prefs.lastCheckAt = System.currentTimeMillis()
                 response.header("ETag")?.let { prefs.releasesEtag = it }
 
                 val releases = json.decodeFromString<List<GhRelease>>(response.body.string())
@@ -186,6 +195,29 @@ object Updates {
 
     fun idle() {
         _state.value = UpdateState.Idle
+    }
+
+    /**
+     * What went wrong, in words rather than in a status code.
+     *
+     * The one worth naming is the rate limit: sixty requests an hour per address
+     * with no credentials, shared by everything on that network, and a bare
+     * "HTTP 403" reads like a permission problem with the repository rather than
+     * like "wait twenty minutes".
+     */
+    private fun describe(response: Response): String {
+        if (response.code == 403 && response.header("X-RateLimit-Remaining") == "0") {
+            val reset = response.header("X-RateLimit-Reset")?.toLongOrNull()
+            val at = reset?.let {
+                SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(it * 1000))
+            }
+            return if (at == null) {
+                "GitHub's hourly limit for anonymous requests is used up. Try again later."
+            } else {
+                "GitHub's hourly limit for anonymous requests is used up. It resets at $at."
+            }
+        }
+        return "GitHub answered HTTP ${response.code}."
     }
 
     private fun verdictFor(known: String?): UpdateState {
