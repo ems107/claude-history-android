@@ -40,6 +40,7 @@ fun ServerListScreen(
     onOpen: (Server) -> Unit,
     onEdit: (String) -> Unit,
     onAdd: () -> Unit,
+    onSettings: () -> Unit,
 ) {
     val servers by viewModel.servers.collectAsState()
     val states by viewModel.states.collectAsState()
@@ -51,6 +52,7 @@ fun ServerListScreen(
                 title = { Text("claude-history") },
                 actions = {
                     TextButton(onClick = { viewModel.refreshAll() }) { Text("Refresh") }
+                    TextButton(onClick = onSettings) { Text("Settings") }
                 },
             )
         },

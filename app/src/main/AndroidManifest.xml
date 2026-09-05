@@ -12,6 +12,9 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
+    <!-- Only for the app updating itself; nothing else uses it. -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+
     <application
         android:name=".ClaudeHistoryApp"
         android:allowBackup="false"
@@ -61,6 +64,10 @@
 
         <receiver
             android:name=".notify.DismissReceiver"
+            android:exported="false" />
+
+        <receiver
+            android:name=".update.InstallReceiver"
             android:exported="false" />
     </application>
 

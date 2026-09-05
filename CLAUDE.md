@@ -21,6 +21,7 @@ The wrapper needs a JDK; `JAVA_HOME` is set for the user on this machine to the 
 | `adb -s <device> install -r <apk>` | install over the previous build |
 | `adb -s <device> logcat` | the logs; there is nothing else to read |
 | `adb -s <device> exec-out screencap -p > shot.png` | how the UI is checked — there is no emulator here |
+| `.\scripts\release.ps1 -Version X.Y.Z -NotesFile <path>` | cut a release — **only when the user asks**. `-DryRun` builds and stops before the tag |
 
 `local.properties` points at a **user-owned SDK** in `%LOCALAPPDATA%\Android\Sdk`, not at the one Visual Studio installed under `Program Files`: that one cannot be added to without elevation and has no accepted licence files. Its `platform-tools` is junctioned into ours, so there is exactly one `adb` on the machine and no version fight with Visual Studio.
 
@@ -28,7 +29,7 @@ The wrapper needs a JDK; `JAVA_HOME` is set for the user on this machine to the 
 
 - **The phone MIRRORS the bell; it never edits it.** What is shown is exactly what `GET /api/notifications` says: a row appears, a notification appears; the row goes, the notification goes. This app must **never** call `/api/notifications/dismiss` — dismissing is the act of the person who attended the session, and it reaches every device through the server on its own.
 - **No push service, no account, no analytics.** The only hosts this app talks to are the servers the user typed in and `api.github.com` for its own updates. There is no Google in the middle, deliberately: a notification you cannot act on — because the phone cannot reach the server either — is worth less than the dependency costs.
-- **Every automatic network call is switchable off and named in the README.** Today there is one: the update check. Adding another is allowed and costs exactly that.
+- **Every automatic network call is switchable off and named in the README.** Today there is exactly one: the once-a-day update check, a conditional GET to `api.github.com` that downloads nothing. Adding another is allowed and costs precisely that — a switch, and a line in the README.
 - **Plain HTTP is deliberate, not an oversight.** claude-history has no HTTPS by design, so `network_security_config.xml` permits cleartext. Never "fix" it.
 - **The signing key never enters the repository.** `keystore.properties` and the `.jks` are both gitignored, and both must be backed up: an update installs over the app only if it carries the same signature.
 - **NEVER cut a release on your own initiative.** Building and testing an APK is not publishing one. Tag and release only when the user asks for it in that turn.

@@ -19,6 +19,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.github.ems107.claudehistory.notify.Notifications
 import io.github.ems107.claudehistory.notify.WatchService
+import io.github.ems107.claudehistory.update.Updates
+import io.github.ems107.claudehistory.ui.AppSettingsScreen
 import io.github.ems107.claudehistory.ui.ServerEditScreen
 import io.github.ems107.claudehistory.ui.ServerListScreen
 import io.github.ems107.claudehistory.ui.ServersViewModel
@@ -91,6 +93,8 @@ sealed interface Screen {
     data class Edit(val id: String?) : Screen
 
     data class Viewer(val serverId: String, val path: String = "/") : Screen
+
+    data object Settings : Screen
 }
 
 @Composable
@@ -115,6 +119,9 @@ private fun App() {
         if (servers.isNotEmpty()) WatchService.start(context)
     }
 
+    // The one automatic network call, once a day, and only if it is switched on.
+    LaunchedEffect(Unit) { Updates.check(context, automatic = true) }
+
     BackHandler(enabled = screen !is Screen.Servers) { screen = Screen.Servers }
 
     when (val current = screen) {
@@ -125,6 +132,7 @@ private fun App() {
                 onOpen = { screen = Screen.Viewer(it.id) },
                 onEdit = { screen = Screen.Edit(it) },
                 onAdd = { screen = Screen.Edit(null) },
+                onSettings = { screen = Screen.Settings },
             )
         }
 
@@ -133,6 +141,8 @@ private fun App() {
             serverId = current.id,
             onDone = { screen = Screen.Servers },
         )
+
+        is Screen.Settings -> AppSettingsScreen(onBack = { screen = Screen.Servers })
 
         is Screen.Viewer -> ViewerScreen(
             viewModel = viewModel,

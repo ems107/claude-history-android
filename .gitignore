@@ -4,6 +4,7 @@ build/
 .cxx/
 captures/
 .kotlin/
+dist/
 
 # Machine-specific, and the two files that must never be committed
 local.properties

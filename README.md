@@ -19,6 +19,12 @@ There is no Play Store listing. Download the APK from [releases](https://github.
 
 Because updates install over the app, **every release is signed with the same key**. An APK from anywhere else will not install on top of one from here.
 
+## Updating
+
+Once a day the app makes **one small conditional request to `api.github.com`**, asking whether a newer release exists. That is the only thing this app does on the network by itself, it downloads nothing, and the switch that turns it off is in Settings.
+
+When there is a new version, Settings offers it: the APK is downloaded, checked against the `checksums.txt` published beside it, and handed to Android — which asks you before replacing anything.
+
 ## What it asks of your phone, and why
 
 | Permission | What breaks without it |
