@@ -1,0 +1,20 @@
+# Gradle and Android build output
+.gradle/
+build/
+.cxx/
+captures/
+.kotlin/
+
+# Machine-specific, and the two files that must never be committed
+local.properties
+keystore.properties
+*.jks
+*.keystore
+
+# IDE
+.idea/
+*.iml
+
+# OS
+Thumbs.db
+.DS_Store

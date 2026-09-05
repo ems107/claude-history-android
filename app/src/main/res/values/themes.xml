@@ -1,0 +1,11 @@
+<resources>
+    <!--
+      A pure Compose app needs almost nothing from the XML theme: it decides the
+      window background painted before the first frame, and nothing else. The
+      Material parent (rather than Material3 or DeviceDefault.DayNight) is what
+      API 28 offers without pulling in the material views library.
+    -->
+    <style name="Theme.ClaudeHistory" parent="@android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/window_background</item>
+    </style>
+</resources>

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  claude-history speaks plain HTTP, by design and not by omission: there is no
+  HTTPS because a certificate for a LAN IP address costs more than it buys for a
+  personal tool on a home network or inside a WireGuard tunnel. Android has
+  blocked cleartext traffic by default since API 28, so without this file every
+  server this app exists to reach would be unreachable.
+
+  Deliberately unrestricted rather than a domain allowlist: the servers are IP
+  addresses and ports the user types into the app, and no list written here
+  could ever know them.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>
