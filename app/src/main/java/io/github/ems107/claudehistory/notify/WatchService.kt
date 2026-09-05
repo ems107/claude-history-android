@@ -55,6 +55,14 @@ class WatchService : Service() {
 
     private val scope = CoroutineScope(SupervisorJob())
     private val jobs = mutableMapOf<String, Job>()
+
+    /**
+     * Both the server list arriving and a network appearing rewrite [jobs], from
+     * different coroutines on a multi-threaded dispatcher. Without this they can
+     * interleave into a server watched twice, or not at all.
+     */
+    private val jobsLock = Mutex()
+
     private val status = mutableMapOf<String, String>()
     private val statusLock = Mutex()
 
@@ -99,7 +107,7 @@ class WatchService : Service() {
         super.onDestroy()
     }
 
-    private suspend fun syncJobs(servers: List<Server>) {
+    private suspend fun syncJobs(servers: List<Server>) = jobsLock.withLock {
         val ids = servers.map { it.id }.toSet()
         jobs.keys.filter { it !in ids }.forEach { gone ->
             jobs.remove(gone)?.cancelAndJoin()
@@ -115,7 +123,7 @@ class WatchService : Service() {
         }
     }
 
-    private suspend fun restartAll() {
+    private suspend fun restartAll() = jobsLock.withLock {
         val running = jobs.keys.toList()
         running.forEach { id -> jobs.remove(id)?.cancelAndJoin() }
         running.forEach { id -> jobs[id] = watch(id) }
