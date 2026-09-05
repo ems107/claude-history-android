@@ -178,7 +178,7 @@ class WatchService : Service() {
             val connection = graph.client.connect(server)
             if (connection !is Connection.Ready) {
                 Log.i(TAG, "cannot reach " + server.label() + ": " + shortOf(connection))
-                graph.watch.lost(serverId, shortOf(connection))
+                graph.watch.lost(serverId, shortOf(connection), refused = connection is Connection.Refused)
                 delay(backoff)
                 backoff = (backoff * 2).coerceAtMost(MAX_BACKOFF_MS)
                 continue

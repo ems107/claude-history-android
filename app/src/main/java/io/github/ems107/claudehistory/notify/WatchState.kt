@@ -62,6 +62,8 @@ data class ServerLive(
     val counts: LiveCounts? = null,
     /** Its notifications are off. It is still watched; it just raises nothing. */
     val muted: Boolean = false,
+    /** Reached and turned away: a wrong password, remote access off. Worth red. */
+    val refused: Boolean = false,
 )
 
 /**
@@ -92,8 +94,14 @@ class WatchState {
     }
 
     /** Unreachable, refused, or the stream ended: [why] is what the card says. */
-    fun lost(serverId: String, why: String) = write(serverId) { before ->
-        ServerLive(connection = why, connected = false, counts = null, muted = before?.muted ?: false)
+    fun lost(serverId: String, why: String, refused: Boolean = false) = write(serverId) { before ->
+        ServerLive(
+            connection = why,
+            connected = false,
+            counts = null,
+            muted = before?.muted ?: false,
+            refused = refused,
+        )
     }
 
     fun counted(serverId: String, counts: LiveCounts) = write(serverId) { before ->
