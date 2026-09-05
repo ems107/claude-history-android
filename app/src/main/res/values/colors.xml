@@ -1,4 +1,9 @@
 <resources>
     <color name="window_background">#FAF9F5</color>
-    <color name="ic_launcher_background">#2B2A27</color>
+    <!--
+         The tile IS the mark: terracotta, with the trail cut into it in warm
+         black. Not the app's own dark ground, which is what this used to be -
+         a glyph floating on a neutral square reads as timid at launcher size.
+    -->
+    <color name="ic_launcher_background">#D97757</color>
 </resources>

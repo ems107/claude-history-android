@@ -1,7 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  A status-bar icon is a silhouette: Android paints it white and throws the
-  colours away, so this is the history dial as a flat shape and nothing else.
+  A status-bar icon is a silhouette: Android throws the colours away and tints
+  what is left, so this is the trail alone — no tile, which up there would be a
+  white rectangle with smudges in it.
+
+  The fade survives because only the ALPHA channel is read: the two chevrons
+  behind come through as a lighter tint rather than as another colour, which is
+  the same reading as everywhere else by a different mechanism.
+
+  Same drawing as the launcher icon at half its coordinates (the 48-unit source
+  in docs/brand, halved onto the 24dp canvas a notification icon must use).
 -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="24dp"
@@ -10,6 +18,23 @@
     android:viewportHeight="24"
     android:tint="#FFFFFFFF">
     <path
-        android:fillColor="#FFFFFFFF"
-        android:pathData="M13,3c-4.97,0 -9,4.03 -9,9L1,12l3.89,3.89 0.07,0.14L9,12L6,12c0,-3.87 3.13,-7 7,-7s7,3.13 7,7 -3.13,7 -7,7c-1.93,0 -3.68,-0.79 -4.94,-2.06l-1.42,1.42C8.27,19.99 10.51,21 13,21c4.97,0 9,-4.03 9,-9s-4.03,-9 -9,-9zM12,8v5l4.28,2.54 0.72,-1.21 -3.5,-2.08L13.5,8L12,8z" />
+        android:pathData="M4,8 L7.5,12 L4,16"
+        android:strokeAlpha="0.3"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:strokeWidth="2.75" />
+    <path
+        android:pathData="M8.5,6.75 L13,12 L8.5,17.25"
+        android:strokeAlpha="0.6"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:strokeWidth="3.25" />
+    <path
+        android:pathData="M13.25,5.5 L19.5,12 L13.25,18.5"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:strokeWidth="3.75" />
 </vector>

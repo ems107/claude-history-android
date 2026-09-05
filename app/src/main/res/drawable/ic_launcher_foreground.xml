@@ -1,8 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  The adaptive-icon foreground: a history dial on the 108dp canvas, drawn at
-  24dp and scaled by 3 so the glyph occupies the 72dp safe zone the launcher
-  guarantees, whatever mask it applies.
+  The mark: a terminal prompt and the trail it leaves behind. The solid chevron
+  is now; the two behind it are what already happened.
+
+  Drawn on the 48-unit canvas the SVG sources use (docs/brand/icon-a.svg) and
+  scaled into the 108dp foreground by a group transform, so the two can never
+  drift apart. 1.65 rather than the obvious 1.5: the furthest ink then sits 30.9
+  from the centre while Android's guaranteed-visible circle has a radius of 33,
+  so the mark fills as much of the tile as it can without risking a mask.
+
+  Warm near-black, not the app's cool one — on a terracotta ground a cool black
+  goes muddy. The tile behind it is @color/ic_launcher_background.
 -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
@@ -10,12 +18,29 @@
     android:viewportWidth="108"
     android:viewportHeight="108">
     <group
-        android:scaleX="3"
-        android:scaleY="3"
-        android:translateX="18"
-        android:translateY="18">
+        android:scaleX="1.65"
+        android:scaleY="1.65"
+        android:translateX="14.4"
+        android:translateY="14.4">
         <path
-            android:fillColor="#D97757"
-            android:pathData="M13,3c-4.97,0 -9,4.03 -9,9L1,12l3.89,3.89 0.07,0.14L9,12L6,12c0,-3.87 3.13,-7 7,-7s7,3.13 7,7 -3.13,7 -7,7c-1.93,0 -3.68,-0.79 -4.94,-2.06l-1.42,1.42C8.27,19.99 10.51,21 13,21c4.97,0 9,-4.03 9,-9s-4.03,-9 -9,-9zM12,8v5l4.28,2.54 0.72,-1.21 -3.5,-2.08L13.5,8L12,8z" />
+            android:pathData="M8,16 L15,24 L8,32"
+            android:strokeAlpha="0.28"
+            android:strokeColor="#2B2320"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round"
+            android:strokeWidth="5.5" />
+        <path
+            android:pathData="M17,13.5 L26,24 L17,34.5"
+            android:strokeAlpha="0.55"
+            android:strokeColor="#2B2320"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round"
+            android:strokeWidth="6.5" />
+        <path
+            android:pathData="M26.5,11 L39,24 L26.5,37"
+            android:strokeColor="#2B2320"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round"
+            android:strokeWidth="7.5" />
     </group>
 </vector>
