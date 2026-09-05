@@ -1,10 +1,12 @@
 package io.github.ems107.claudehistory
 
 import android.content.Intent
+import android.content.res.Configuration
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -31,12 +33,30 @@ import kotlinx.coroutines.flow.MutableStateFlow
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Android 15 forces this on any app targeting API 35 or later and Android
+        // 16 took the opt-out away, so the window draws behind the status and
+        // navigation bars whether we ask for it or not. Asking for it is what
+        // makes the SAME thing happen on API 28, where the decor would otherwise
+        // pad the content and hide every inset bug from the one device there is
+        // to test on.
+        enableEdgeToEdge()
         WebViewCache.enableDebugging()
         Notifications.ensureChannels(this)
         consume(intent)
         setContent {
             AppTheme { App() }
         }
+    }
+
+    /**
+     * `uiMode` is one of the configuration changes this Activity handles itself,
+     * so switching the phone to dark mode does not recreate it -- and the system
+     * bars would keep the icon contrast picked for the theme that is no longer
+     * behind them.
+     */
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        enableEdgeToEdge()
     }
 
     /** The activity is `singleTask`, so a tapped notification arrives here. */

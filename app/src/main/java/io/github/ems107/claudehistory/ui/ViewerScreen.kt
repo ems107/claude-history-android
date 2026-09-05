@@ -15,9 +15,14 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -83,7 +88,16 @@ fun ViewerScreen(
 
         OldWebViewWarning(context)
 
-        Box(Modifier.fillMaxSize()) {
+        // The page keeps clear of the gesture bar, of a cutout in landscape and of
+        // the keyboard when a field inside the page takes focus: edge to edge
+        // means the window no longer resizes for any of the three by itself.
+        Box(
+            Modifier
+                .fillMaxSize()
+                .windowInsetsPadding(
+                    WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom),
+                ),
+        ) {
             when (val current = state) {
                 is Connection.Ready -> {
                     val cookie = viewModel.sessionCookie(current.baseUrl)
@@ -117,8 +131,17 @@ private fun ViewerBar(
     onReload: () -> Unit,
 ) {
     Surface(tonalElevation = 2.dp, shadowElevation = 2.dp) {
+        // Inside the Surface, the way Material3 does it in its own top bar: the
+        // padding moves the buttons out from under the clock, and the Surface
+        // still paints the strip they left behind. Outside it, the status bar
+        // would sit on a band of bare window background.
         Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .windowInsetsPadding(
+                    WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal),
+                )
+                .padding(horizontal = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             TextButton(onClick = onBack) { Text("←") }
@@ -169,7 +192,9 @@ private fun OldWebViewWarning(context: Context) {
                 "is the provider.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onErrorContainer,
-            modifier = Modifier.padding(10.dp),
+            modifier = Modifier
+                .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))
+                .padding(10.dp),
         )
     }
 }
