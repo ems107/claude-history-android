@@ -1,7 +1,9 @@
 package io.github.ems107.claudehistory
 
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
+import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 
 /**
@@ -78,3 +80,27 @@ val DarkScheme = darkColorScheme(
     errorContainer = Color(0xFF8C1D18),
     onErrorContainer = Color(0xFFF9DEDC),
 )
+
+/**
+ * The colours for what a server is doing, in the web's own vocabulary: green
+ * for signed in, amber for a session waiting on a person, the accent for one
+ * that is answering, and the muted grey for one at rest.
+ *
+ * They come in pairs because this app has a light ground and a dark one and the
+ * web only ever had the dark: `amber-400` reads as a warning on `#1F1E1C` and as
+ * a highlighter pen on `#FAF9F5`, and the green that works on paper goes nearly
+ * black on ink. Anything that ends up hard-coded in a screen ends up right in
+ * exactly one of the two themes.
+ */
+private val OkOnPaper = Color(0xFF2E7D32)
+private val OkOnInk = Color(0xFF7CC47F)
+private val WaitingOnPaper = Color(0xFFB45309)
+private val WaitingOnInk = Color(0xFFFBBF24)
+
+/** Signed in. */
+val ok: Color
+    @Composable get() = if (isSystemInDarkTheme()) OkOnInk else OkOnPaper
+
+/** A dialog is on screen and nothing moves until somebody answers it. */
+val waiting: Color
+    @Composable get() = if (isSystemInDarkTheme()) WaitingOnInk else WaitingOnPaper

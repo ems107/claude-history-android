@@ -26,12 +26,15 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import io.github.ems107.claudehistory.data.Server
 import io.github.ems107.claudehistory.net.Connection
+import io.github.ems107.claudehistory.notify.LiveCounts
+import io.github.ems107.claudehistory.notify.ServerLive
+import io.github.ems107.claudehistory.ok
+import io.github.ems107.claudehistory.waiting
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -44,6 +47,7 @@ fun ServerListScreen(
 ) {
     val servers by viewModel.servers.collectAsState()
     val states by viewModel.states.collectAsState()
+    val live by viewModel.live.collectAsState()
     val connecting by viewModel.connecting.collectAsState()
 
     Scaffold(
@@ -73,6 +77,7 @@ fun ServerListScreen(
                     ServerCard(
                         server = server,
                         state = states[server.id],
+                        live = live[server.id],
                         busy = server.id in connecting,
                         onOpen = { onOpen(server) },
                         onEdit = { onEdit(server.id) },
@@ -104,6 +109,7 @@ private fun EmptyState(modifier: Modifier = Modifier) {
 private fun ServerCard(
     server: Server,
     state: Connection?,
+    live: ServerLive?,
     busy: Boolean,
     onOpen: () -> Unit,
     onEdit: () -> Unit,
@@ -133,22 +139,79 @@ private fun ServerCard(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            Box(Modifier.padding(top = 6.dp)) { StateLine(state, busy) }
+            Box(Modifier.padding(top = 6.dp)) { StateLine(state, live, busy) }
+            val counts = live?.counts
+            // Nothing at all rather than three zeros: a count you have to read
+            // before you can ignore it is worse than a line that is not there.
+            if (counts != null && counts.total > 0) {
+                CountsLine(counts, Modifier.padding(top = 4.dp))
+            }
+        }
+    }
+}
+
+/**
+ * Whether the server answers, in the freshest terms available.
+ *
+ * The service wins whenever it has an opinion, because it is holding the
+ * connection while this screen is only ever quoting one check from whenever it
+ * was last opened -- which is how the card used to go on saying "Signed in" at
+ * a server that had been off for an hour.
+ */
+@Composable
+private fun StateLine(state: Connection?, live: ServerLive?, busy: Boolean) {
+    val (text, colour) = when {
+        live != null -> live.connection to when {
+            live.connected -> ok
+            live.refused -> MaterialTheme.colorScheme.error
+            else -> MaterialTheme.colorScheme.onSurfaceVariant
+        }
+
+        busy && state == null -> "Checking..." to MaterialTheme.colorScheme.onSurfaceVariant
+        state == null -> "Not checked yet" to MaterialTheme.colorScheme.onSurfaceVariant
+        state is Connection.Ready -> "Signed in" to ok
+        state is Connection.Refused -> state.short to MaterialTheme.colorScheme.error
+        state is Connection.Unreachable -> "Not reachable" to MaterialTheme.colorScheme.onSurfaceVariant
+        else -> "" to MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(text, style = MaterialTheme.typography.bodySmall, color = colour)
+        // Said here rather than left to be deduced from a silent phone.
+        if (live?.muted == true) {
+            Dot()
+            Text(
+                "notifications off",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+/**
+ * What is alive over there, in the same three words the session list uses for
+ * the same three states -- the person reading this reads that too.
+ */
+@Composable
+private fun CountsLine(counts: LiveCounts, modifier: Modifier = Modifier) {
+    val parts = buildList {
+        if (counts.waiting > 0) add("${counts.waiting} waiting" to waiting)
+        if (counts.working > 0) add("${counts.working} working" to MaterialTheme.colorScheme.primary)
+        if (counts.idle > 0) add("${counts.idle} idle" to MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+    Row(modifier, verticalAlignment = Alignment.CenterVertically) {
+        parts.forEachIndexed { index, (text, colour) ->
+            if (index > 0) Dot()
+            Text(text, style = MaterialTheme.typography.bodySmall, color = colour)
         }
     }
 }
 
 @Composable
-private fun StateLine(state: Connection?, busy: Boolean) {
-    val (text, colour) = when {
-        busy && state == null -> "Checking..." to MaterialTheme.colorScheme.onSurfaceVariant
-        state == null -> "Not checked yet" to MaterialTheme.colorScheme.onSurfaceVariant
-        state is Connection.Ready -> "Signed in" to Ok
-        state is Connection.Refused -> state.short to MaterialTheme.colorScheme.error
-        state is Connection.Unreachable -> "Not reachable" to MaterialTheme.colorScheme.onSurfaceVariant
-        else -> "" to MaterialTheme.colorScheme.onSurfaceVariant
-    }
-    Text(text, style = MaterialTheme.typography.bodySmall, color = colour)
+private fun Dot() {
+    Text(
+        " · ",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.outline,
+    )
 }
-
-private val Ok = Color(0xFF2E7D32)

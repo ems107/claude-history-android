@@ -6,11 +6,12 @@ captures/
 .kotlin/
 dist/
 
-# Machine-specific, and the two files that must never be committed
+# Machine-specific, and the files that must never be committed
 local.properties
 keystore.properties
 *.jks
 *.keystore
+CLAUDE.local.md
 
 # IDE
 .idea/

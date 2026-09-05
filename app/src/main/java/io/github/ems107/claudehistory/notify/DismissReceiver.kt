@@ -10,7 +10,9 @@ import io.github.ems107.claudehistory.ClaudeHistoryApp
  * server's: the row stays on the bell -- the session really is still waiting --
  * but this phone has been told, and telling it again would be nagging.
  *
- * It comes back only when the session stops AGAIN, which is a different `at`.
+ * It comes back only when the session stops AGAIN, which is a different `at`. In
+ * particular the quote arriving late does not bring it back: that is the same
+ * stop, saying more about itself.
  */
 class DismissReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {

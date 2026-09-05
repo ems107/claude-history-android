@@ -14,6 +14,7 @@ import io.github.ems107.claudehistory.data.EffectiveNotify
 import io.github.ems107.claudehistory.data.Server
 import io.github.ems107.claudehistory.net.KIND_FINISHED
 import io.github.ems107.claudehistory.net.KIND_NEEDS_YOU
+import io.github.ems107.claudehistory.net.StopPreview
 import io.github.ems107.claudehistory.net.StoppedRow
 import java.util.concurrent.ConcurrentHashMap
 
@@ -79,13 +80,29 @@ object Notifications {
  * a memory of transitions that the server keeps in RAM and loses on its own
  * restart ([docs/AI_SERVER_CONTRACT.md]).
  *
+ * **"Persists" is about the stop, not about the words.** A listed row is re-read
+ * rather than taken as unchanged, because the server fills in what the session
+ * said as it stopped a beat AFTER raising the row: same `at`, new quote.
+ * Treating that second answer as a repeat of the first is how the web spent a
+ * while drawing every card without its quote. So a row whose drawn text changed
+ * is redrawn, and redrawn SILENTLY -- the stop announced itself already, and
+ * announcing it again because a sentence arrived late would be the app making
+ * noise about its own plumbing.
+ *
  * The one thing that is ours rather than the server's is what you have already
  * seen: swiping a notification away, or opening it, acknowledges that stop. It
- * comes back only if the session stops AGAIN, which is a different `at`.
+ * comes back only if the session stops AGAIN, which is a different `at` -- and
+ * a quote landing after you swiped is not a reason to bring it back either.
+ * That takes two guards rather than one: the acknowledgement arrives as a
+ * broadcast and a broadcast takes its time, so the second guard is the shade
+ * itself, and nothing is patched onto a notification that is no longer on it.
  */
 class Reconciler(private val context: Context) {
 
-    private val shown = ConcurrentHashMap<String, Long>()
+    /** What was drawn for a stop: which stop it was, and what it said. */
+    private data class Shown(val at: Long, val print: Int)
+
+    private val shown = ConcurrentHashMap<String, Shown>()
     private val acknowledged = ConcurrentHashMap<String, Long>()
 
     private val manager get() = NotificationManagerCompat.from(context)
@@ -104,18 +121,37 @@ class Reconciler(private val context: Context) {
         // makes attending a session at the desk clear the notification here.
         val prefix = server.id + "|"
         shown.keys.filter { it.startsWith(prefix) && it !in wantedByKey }.forEach { key ->
-            Log.i("claude-history", "withdrew " + key)
+            Log.i(TAG, "withdrew " + key)
             manager.cancel(Notifications.idOf(key))
             shown.remove(key)
             acknowledged.remove(key)
         }
 
+        val onScreen = onScreen()
         wantedByKey.forEach { (key, row) ->
             if (acknowledged[key] == row.at) return@forEach
-            if (shown[key] == row.at) return@forEach
-            if (!post(server, key, row)) return@forEach
-            Log.i("claude-history", "raised " + row.kind + " for " + (row.title ?: row.sessionId))
-            shown[key] = row.at
+            val before = shown[key]
+            val print = print(server, row)
+            if (before?.at == row.at && before.print == print) return@forEach
+
+            val id = Notifications.idOf(key)
+            val patch = before != null && before.at == row.at
+            // Off the shade already: it was attended to, and the acknowledgement
+            // is merely still in flight. Remember the words so this is not tried
+            // again on the next event, and raise nothing -- posting to an id the
+            // system no longer holds arrives as a NEW notification, with all the
+            // noise of one.
+            if (patch && onScreen != null && id !in onScreen) {
+                shown[key] = Shown(row.at, print)
+                return@forEach
+            }
+            // A stop nothing here remembers whose row is nevertheless on the
+            // shade is this process having been restarted underneath it. Update
+            // it; do not announce a stop the phone announced before it died.
+            val quietly = patch || (before == null && onScreen != null && id in onScreen)
+            if (!post(server, key, row, quietly)) return@forEach
+            Log.i(TAG, (if (quietly) "redrew " else "raised ") + row.kind + " for " + (row.title ?: row.sessionId))
+            shown[key] = Shown(row.at, print)
             acknowledged.remove(key)
         }
     }
@@ -143,7 +179,27 @@ class Reconciler(private val context: Context) {
         acknowledged.clear()
     }
 
-    private fun post(server: Server, key: String, row: StoppedRow): Boolean {
+    /**
+     * Which of our notifications the shade is holding, or null for "could not
+     * ask" -- which is not the same as "none", and the difference decides
+     * whether a late quote is drawn or dropped.
+     */
+    private fun onScreen(): Set<Int>? = runCatching {
+        context.getSystemService(NotificationManager::class.java)?.activeNotifications?.map { it.id }?.toSet()
+    }.getOrNull()
+
+    /**
+     * The drawn text, as one number.
+     *
+     * Over what is DRAWN rather than over the row, on purpose: a row carries
+     * fields that move on their own -- `stillOpen` is recomputed on every list,
+     * a title improves as the session gets indexed -- and a notification is
+     * worth redrawing when it would LOOK different, not when the JSON differs.
+     */
+    private fun print(server: Server, row: StoppedRow): Int =
+        listOf(title(row), describe(row), subText(server, row), bigText(row)).joinToString(" ").hashCode()
+
+    private fun post(server: Server, key: String, row: StoppedRow, quietly: Boolean): Boolean {
         val id = Notifications.idOf(key)
         val needsYou = row.kind == KIND_NEEDS_YOU
 
@@ -169,15 +225,24 @@ class Reconciler(private val context: Context) {
             if (needsYou) Notifications.CHANNEL_NEEDS_YOU else Notifications.CHANNEL_FINISHED,
         )
             .setSmallIcon(R.drawable.ic_notification)
-            .setContentTitle(row.title?.takeIf { it.isNotBlank() } ?: "Untitled session")
+            .setContentTitle(title(row))
             .setContentText(describe(row))
             .setSubText(subText(server, row))
-            .setStyle(NotificationCompat.BigTextStyle().bigText(describe(row)))
+            // Collapsed, the state is the whole of it: it is what decides
+            // whether this is worth walking to a desk for. The quote is what
+            // the extra height is for, so it lives only in here -- and the
+            // state is repeated, because an expanded style REPLACES the line
+            // above rather than adding to it.
+            .setStyle(NotificationCompat.BigTextStyle().bigText(bigText(row)))
             .setWhen(row.at)
             .setShowWhen(true)
             .setAutoCancel(true)
             .setCategory(if (needsYou) NotificationCompat.CATEGORY_CALL else NotificationCompat.CATEGORY_STATUS)
             .setPriority(if (needsYou) NotificationCompat.PRIORITY_HIGH else NotificationCompat.PRIORITY_DEFAULT)
+            // Only ever set on a redraw. The flag suppresses sound, vibration
+            // and the heads-up for an UPDATE to a notification the shade still
+            // holds -- which is exactly a late quote, and never a new stop.
+            .setOnlyAlertOnce(quietly)
             .setContentIntent(
                 PendingIntent.getActivity(
                     context,
@@ -206,6 +271,9 @@ class Reconciler(private val context: Context) {
         }
     }
 
+    private fun title(row: StoppedRow): String =
+        row.title?.takeIf { it.isNotBlank() } ?: "Untitled session"
+
     private fun describe(row: StoppedRow): String = when (row.kind) {
         KIND_NEEDS_YOU -> row.waitingFor?.takeIf { it.isNotBlank() }
             ?.let { "Waiting for you — $it" }
@@ -217,5 +285,67 @@ class Reconciler(private val context: Context) {
     private fun subText(server: Server, row: StoppedRow): String {
         val project = row.projectName?.takeIf { it.isNotBlank() }
         return if (project == null) server.label() else "${server.label()} · $project"
+    }
+
+    /**
+     * What it says pulled open: the state, and then what the session actually
+     * said as it stopped.
+     *
+     * Falls back to the state alone, which is what every notification used to
+     * be: a server older than the quote sends none, and a turn that ended
+     * holding nothing quotable has none to send.
+     */
+    private fun bigText(row: StoppedRow): String {
+        val quote = row.preview?.let { quote(it) }.orEmpty()
+        return if (quote.isEmpty()) describe(row) else describe(row) + "\n\n" + quote
+    }
+
+    /**
+     * The quote, cut to what a shade will actually draw.
+     *
+     * Cut again here, on top of the server's 600: what runs past the bottom of
+     * an expanded notification is not merely wasted, it takes the "cut at" line
+     * with it -- and that line is the whole reason a quote stopping mid-word
+     * reads as a long answer rather than as a bug in the app. The wording is
+     * the web's, because the two halves are describing the same cut and the
+     * first time one of them was reworded they would disagree.
+     */
+    private fun quote(preview: StopPreview): String {
+        val headline = preview.label?.takeIf { it.isNotBlank() }
+            ?: "Error".takeIf { preview.kind == PREVIEW_ERROR }
+        val full = tidy(preview.text)
+        val body = full.take(QUOTE_MAX).lines().take(QUOTE_LINES).joinToString("\n").trimEnd()
+        if (headline == null && body.isEmpty()) return ""
+        val note = if (preview.truncated || body.length < full.length) {
+            "— cut at " + body.length + " of " + preview.chars + " characters"
+        } else {
+            null
+        }
+        return listOfNotNull(headline, body.ifEmpty { null }, note).joinToString("\n")
+    }
+
+    /**
+     * Blank lines cost height a notification does not have, and a control
+     * character draws as a box. A command keeps its own line breaks: the call
+     * on one line and what the model said it was doing on the next is the shape
+     * of the thing rather than spacing.
+     */
+    private fun tidy(text: String): String = text
+        .map { if (it == '\n' || !it.isISOControl()) it else ' ' }
+        .joinToString("")
+        .lines()
+        .map { it.trimEnd() }
+        .filter { it.isNotEmpty() }
+        .joinToString("\n")
+
+    private companion object {
+        const val TAG = "claude-history"
+
+        /** The one preview kind whose text arrives with no headline of its own. */
+        const val PREVIEW_ERROR = "error"
+
+        /** Roughly what an expanded notification draws before it runs out of shade. */
+        const val QUOTE_MAX = 300
+        const val QUOTE_LINES = 8
     }
 }

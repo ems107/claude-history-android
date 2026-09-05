@@ -9,6 +9,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import okhttp3.Call
 import okhttp3.Cookie
 import okhttp3.CookieJar
 import okhttp3.HttpUrl
@@ -20,6 +21,7 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.IOException
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
 
 /**
  * How this app talks to a claude-history server. The whole contract it depends
@@ -86,9 +88,19 @@ class ServerClient(private val store: ServerStore) {
         .readTimeout(5, TimeUnit.SECONDS)
         .build()
 
-    /** No read timeout: the event stream is silent by design between events. */
+    /**
+     * Silent by design between events -- but never for longer than a heartbeat,
+     * which the server writes every 25 seconds and this timeout measures
+     * against.
+     *
+     * No timeout at all was the bug it looks like a feature: a socket that dies
+     * without an RST -- a NAT giving up, a tunnel rekeying, the other machine
+     * suspending -- leaves the read blocked forever. The watch never reconnects
+     * and never says so, which used to cost notifications quietly and now would
+     * print "Connected" on a card while nothing at all was arriving.
+     */
     private val streamer = http.newBuilder()
-        .readTimeout(0, TimeUnit.MILLISECONDS)
+        .readTimeout(60, TimeUnit.SECONDS)
         .build()
 
     /**
@@ -181,15 +193,23 @@ class ServerClient(private val store: ServerStore) {
      * An authenticated GET, signing in again once if the session has gone. What
      * everything that READS a server goes through, as opposed to merely reaching
      * one.
+     *
+     * Cancelling the coroutine closes the socket, the way [streamEvents] already
+     * does: `execute()` is a blocking read on a 20-second fuse that does not
+     * notice cancellation by itself, so without this a job being replaced -- a
+     * network arriving, a server deleted -- holds up whoever is waiting to join
+     * it for as long as that fuse.
      */
     suspend fun getText(server: Server, base: String, path: String): String? =
         withContext(Dispatchers.IO) {
+            val inFlight = AtomicReference<Call?>(null)
+            coroutineContext.job.invokeOnCompletion { inFlight.get()?.cancel() }
             try {
-                var result = call(base, path)
+                var result = call(base, path, inFlight)
                 if (result.first == 401) {
                     jar.forget(base)
                     if (login(server, base) !is Connection.Ready) return@withContext null
-                    result = call(base, path)
+                    result = call(base, path, inFlight)
                 }
                 if (result.first == 200) result.second else null
             } catch (_: IOException) {
@@ -197,13 +217,26 @@ class ServerClient(private val store: ServerStore) {
             }
         }
 
-    private fun call(base: String, path: String): Pair<Int, String?> =
-        http.newCall(getRequest(base, path)).execute().use { it.code to it.body.string() }
+    private fun call(base: String, path: String, inFlight: AtomicReference<Call?>): Pair<Int, String?> =
+        http.newCall(getRequest(base, path)).also(inFlight::set)
+            .execute().use { it.code to it.body.string() }
 
     /** The bell, whole: what has stopped and is still open, newest first. */
     suspend fun notifications(server: Server, base: String): List<StoppedRow>? {
         val body = getText(server, base, "/api/notifications") ?: return null
         return runCatching { json.decodeFromString<StoppedList>(body).stopped }.getOrNull()
+    }
+
+    /**
+     * What is alive on that machine right now, for counting.
+     *
+     * The bell says what STOPPED while we were watching; this says what is
+     * there, resting included. Dead pids are filtered out by the server, so a
+     * row here is a process that exists.
+     */
+    suspend fun live(server: Server, base: String): List<LiveRow>? {
+        val body = getText(server, base, "/api/live") ?: return null
+        return runCatching { json.decodeFromString<List<LiveRow>>(body) }.getOrNull()
     }
 
     /** The server's own notification preferences, which ours inherit. */

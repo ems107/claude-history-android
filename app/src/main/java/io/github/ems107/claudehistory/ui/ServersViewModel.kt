@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import io.github.ems107.claudehistory.ClaudeHistoryApp
 import io.github.ems107.claudehistory.data.Server
 import io.github.ems107.claudehistory.net.Connection
+import io.github.ems107.claudehistory.notify.ServerLive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -23,6 +24,16 @@ class ServersViewModel(app: Application) : AndroidViewModel(app) {
     private val graph = app as ClaudeHistoryApp
 
     val servers: StateFlow<List<Server>> = graph.store.servers
+
+    /**
+     * What the watching service is seeing, which is the fresher answer whenever
+     * there is one: it holds the connection continuously, while [states] is a
+     * single check from whenever somebody last opened the screen.
+     *
+     * Empty while the service is not running -- which is the whole of "is it
+     * running" that anything here needs to ask.
+     */
+    val live: StateFlow<Map<String, ServerLive>> = graph.watch.servers
 
     private val _states = MutableStateFlow<Map<String, Connection>>(emptyMap())
     val states: StateFlow<Map<String, Connection>> = _states.asStateFlow()
