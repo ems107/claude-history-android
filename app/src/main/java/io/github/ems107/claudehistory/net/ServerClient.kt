@@ -206,6 +206,18 @@ class ServerClient(private val store: ServerStore) {
         return runCatching { json.decodeFromString<StoppedList>(body).stopped }.getOrNull()
     }
 
+    /**
+     * What is alive on that machine right now, for counting.
+     *
+     * The bell says what STOPPED while we were watching; this says what is
+     * there, resting included. Dead pids are filtered out by the server, so a
+     * row here is a process that exists.
+     */
+    suspend fun live(server: Server, base: String): List<LiveRow>? {
+        val body = getText(server, base, "/api/live") ?: return null
+        return runCatching { json.decodeFromString<List<LiveRow>>(body) }.getOrNull()
+    }
+
     /** The server's own notification preferences, which ours inherit. */
     suspend fun serverSettings(server: Server, base: String): ServerSettings? {
         val body = getText(server, base, "/api/settings") ?: return null
