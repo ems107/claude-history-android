@@ -10,7 +10,8 @@ That last part is the whole reason this exists. claude-history has a bell, tones
 
 - **N servers.** Each one is an alias, an ordered list of URLs and your credentials. If the first URL does not answer — you are on the tunnel instead of the LAN, say — it tries the next.
 - **A viewer that is already signed in.** The app logs in natively, and hands the session cookie to the embedded browser, so you never see the login page. The interface is claude-history's own, unchanged: this version does not adapt it to a phone screen, so expect the desktop layout, small.
-- **Notifications that mirror the bell.** Whatever `/api/notifications` says has stopped, your phone shows: a session that stops raises a notification, a session you attend anywhere makes it disappear. Tapping one opens that session in the viewer.
+- **Notifications that mirror the bell.** Whatever `/api/notifications` says has stopped, your phone shows: a session that stops raises a notification, a session you attend anywhere makes it disappear. Tapping one opens that session in the viewer. Pull one open and it quotes what the session actually stopped on — the command it is asking to run, the plan, the question — so you can tell from the lock screen whether it can wait.
+- **What is going on, right now.** Each server says how many of its sessions are waiting for you, working, or open and idle, and the numbers move on their own while you are looking at them. The same counts, added up, are on the permanent notification.
 - **Its own updates.** The app checks its GitHub releases, verifies the APK's SHA-256 and installs it over itself.
 
 ## Installing
@@ -29,7 +30,7 @@ Sending the app to Google for scanning is what produces that verdict, so it does
 
 ## Updating
 
-Once a day the app makes **one small conditional request to `api.github.com`**, asking whether a newer release exists. That is the only thing this app does on the network by itself, it downloads nothing, and the switch that turns it off is in Settings.
+Once a day the app makes **one small conditional request to `api.github.com`**, asking whether a newer release exists. Apart from the servers you added yourself, that is the only host it ever talks to. It downloads nothing, and the switch that turns it off is in Settings.
 
 When there is a new version, Settings offers it: the APK is downloaded, checked against the `checksums.txt` published beside it, and handed to Android — which asks you before replacing anything.
 
@@ -42,7 +43,7 @@ When there is a new version, Settings offers it: the APK is downloaded, checked 
 | Install unknown apps | only the self-update; you can always install the APK by hand instead |
 | Start at boot | the app has to be opened by hand after every restart |
 
-It keeps **one permanent low-priority notification** while it is watching. That is not a choice: Android only lets an app hold a connection in the background if it shows one.
+It keeps **one permanent low-priority notification** while it is watching. That is not a choice: Android only lets an app hold a connection in the background if it shows one. It is not wasted, either — it carries the totals, and pulled open it lists every server with its own.
 
 ## What it needs from the server
 

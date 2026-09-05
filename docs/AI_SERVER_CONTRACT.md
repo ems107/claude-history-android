@@ -1,6 +1,6 @@
 # What this app needs from a claude-history server
 
-**Load this before touching anything under `net/`.** It is the whole surface: five endpoints, one cookie and three traps. Everything here was read out of the server's source and measured against a live 1.19.0 instance; the *reasoning* behind each rule lives in that project's `docs/AI_REMOTE_ACCESS.md` and is not repeated.
+**Load this before touching anything under `net/`.** It is the whole surface: six endpoints, one cookie and four traps. Everything here was read out of the server's source and measured against a live instance; the *reasoning* behind each rule lives in that project's `docs/AI_REMOTE_ACCESS.md` and is not repeated.
 
 ## Invariants
 
@@ -16,18 +16,29 @@
 | GET | `/api/auth/status` | four booleans — `remote`, `remoteAccessEnabled`, `configured`, `authenticated`. The only endpoint reachable without a session, so it is what "test this server" asks and what tells the difference between *wrong password*, *remote access is off* and *no credentials are set there* |
 | POST | `/api/auth/login` | `{username, password}` → `Set-Cookie`. Backs off after failures (429 with `retryAfterSeconds`) |
 | GET | `/api/notifications` | `{stopped: StoppedSessionEntry[]}`, newest first — the whole notification model |
-| GET | `/api/events` | SSE. We care about one event, `{"type":"notifications-changed"}`; everything else is for the web UI |
+| GET | `/api/live` | `LiveSessionEntry[]` — what is running over there this moment, which is what the cards and the permanent notice count |
+| GET | `/api/events` | SSE. We care about two events, `{"type":"notifications-changed"}` and `{"type":"live-changed"}`; everything else is for the web UI |
 | GET | `/api/settings` | the server's own notification preferences, which ours inherit: `notifyEnabled`, `notifyOnNeedsYou`, `notifyOnFinished` |
 
-`GET /api/meta` is worth a sixth line for diagnostics alone: it carries the server's `version` and whether it is a dev instance.
+`GET /api/meta` is worth a seventh line for diagnostics alone: it carries the server's `version` and whether it is a dev instance.
 
 ### `StoppedSessionEntry`
 
 `sessionId`, `kind` (`needs-you` | `finished`), `waitingFor` (the CLI's own words — "permission prompt", "input needed"; null on `finished`), `at` (**epoch ms**, unlike the ISO strings elsewhere in that API), `source` (`cli` | `app`), plus `title`, `projectName`, `projectKey`, `cwd` and `stillOpen` for drawing the row without a second request.
 
+`preview` is the quote: what the session said as it stopped, as `{kind, label, text, chars, truncated}`. `kind` is `tool` | `plan` | `question` | `answer` | `error` and decides what `label` holds — the tool's name, the plan's title, the question — with `label` null where the text is its own headline. `text` arrives cut to 600 characters, `chars` is the real length before the cut. **It is null far more often than it looks**, and the fourth trap is about why.
+
 Everything a notification needs is in there. There is no second call.
 
-## The three traps
+### `LiveSessionEntry`
+
+`sessionId`, `pid`, `cwd`, `entrypoint`, and the CLI's own `LiveInfo`: `status`, `waitingFor`, `name`, `startedAt`, `updatedAt`, `statusUpdatedAt`, `busySince`. A bare JSON array, not an object with a key. Dead pids are filtered out by the server, so a row here is a process that exists.
+
+**`status` has four values and only four** — `busy`, `waiting`, `idle`, `shell` — read out of the CLI binary rather than guessed, plus `unknown`. `idle` and `shell` are one state: `shell` is `idle` with a shell open on top, and nothing about the conversation differs. It is a loose string on purpose, and so is ours: **a fifth value from a later CLI must count as nothing, never as idle.**
+
+Two things this list is not. It is **not the bell**: a stop is a transition and this is a state, so every terminal somebody left open is in here, resting — which is exactly why the bell is kept server-side instead of derived from this. And it **includes the server's own `--print` runs**, which register a pid and report no status of their own; the server paints `busy`/`waiting` over the ones it started itself, and anything else is `unknown`.
+
+## The four traps
 
 ### A POST with no `Origin` is refused, and only from another machine
 
@@ -47,6 +58,14 @@ The bell only ever holds sessions seen to **leave** `busy` while that server pro
 
 Four things withdraw a row on the server — visiting the session, dismissing it, clearing the bell, and the `claude` process going away — and all four reach us as the row simply not being in the next answer.
 
+### A row still listed is re-read, not taken as unchanged
+
+**The quote arrives on a second answer.** The server raises the row the instant the session stops — synchronously, so that `at` is honest — and reads the transcript a beat later, patching the row and emitting a **second** `notifications-changed`. That second row carries the same `sessionId` and the same `at`, and differs only in `preview`. It can also arrive minutes later: a session with no transcript yet is put on a retry list and filled in when one appears.
+
+So **`at` says which stop it is, and nothing about what the row now says**. Deciding a listed row is a row already handled is how the web spent a while drawing every card without its quote, and it is the same mistake waiting here — with a second edge of its own, because redrawing an Android notification is only silent while the shade still holds it. `notify/Notifications.kt` has the whole rule.
+
 ## Reaching the server at all
 
 Plain HTTP, no TLS, on a LAN address or through a WireGuard tunnel. A server that is not reachable is not an error state to report loudly: it is Tuesday, and the app says so quietly and keeps retrying.
+
+**The stream is silent, not idle.** `/api/events` sends nothing between events except `: hb` every 25 seconds, and that heartbeat is the only evidence the socket is still alive — a connection that dies without an RST looks exactly like a quiet afternoon. Reading it with no timeout is therefore a way to hang forever, believing you are connected.

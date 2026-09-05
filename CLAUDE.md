@@ -30,6 +30,7 @@ The wrapper needs a JDK; `JAVA_HOME` is set for the user on this machine to the 
 - **The phone MIRRORS the bell; it never edits it.** What is shown is exactly what `GET /api/notifications` says: a row appears, a notification appears; the row goes, the notification goes. This app must **never** call `/api/notifications/dismiss` — dismissing is the act of the person who attended the session, and it reaches every device through the server on its own.
 - **No push service, no account, no analytics.** The only hosts this app talks to are the servers the user typed in and `api.github.com` for its own updates. There is no Google in the middle, deliberately: a notification you cannot act on — because the phone cannot reach the server either — is worth less than the dependency costs.
 - **Every automatic network call is switchable off and named in the README.** Today there is exactly one: the once-a-day update check, a conditional GET to `api.github.com` that downloads nothing. Adding another is allowed and costs precisely that — a switch, and a line in the README.
+- **Watching is not one of those calls — it is what the app is for — and it is not gated by the notification switches.** Every configured server gets a held stream, plus a read of the bell and of what is live whenever that stream says either moved. Turning a server's notifications off makes it *quiet*, not *unwatched*: its counts are worth the same, and a preference flipped at the desk arrives on the next event. **Removing the server is what stops the app talking to it**, and the permanent notice says `· muted` on the line of any server that is being watched but will not speak.
 - **Plain HTTP is deliberate, not an oversight.** claude-history has no HTTPS by design, so `network_security_config.xml` permits cleartext. Never "fix" it.
 - **The signing key never enters the repository.** `keystore.properties` and the `.jks` are both gitignored, and both must be backed up: an update installs over the app only if it carries the same signature.
 - **NEVER cut a release on your own initiative.** Building and testing an APK is not publishing one. Tag and release only when the user asks for it in that turn.
@@ -46,7 +47,15 @@ Same as the server repo, and for the same reasons:
 
 ## Verifying
 
-There is no test suite. It is checked against a real server and a real phone — an Urovo DT50 on Android 9, reached over `adb connect`, with screenshots for anything visual. What has been proved, and how, so nothing is re-argued from memory:
+There is no test suite. It is checked against a real server and a real phone — an Urovo DT50 on Android 9, reached over `adb connect`, with screenshots for anything visual.
+
+**Almost every check below spends the subscription, so two rules come first.** They are the server repo's, in its `docs/AI_TESTING.md`, and they are repeated here because a `model: haiku` sitting in one cell of a table reads as a detail of that one check instead of as the rule it is.
+
+- **`haiku` or `sonnet`, never `opus` or `fable`, and `low` effort.** Nothing here measures intelligence. It measures that a status arrives, that a notification is raised, and that a number moves — and a haiku session stopping proves all three exactly as well.
+- **A terminal opened by hand does not obey that by itself**, which is how the rule gets broken with nothing failing: the CLI takes the machine's own default, which here is `opus[1m]` at `xhigh`. Pin it from inside before the first prompt — `/model haiku`, with the name as an argument so no picker opens — and check it where it cannot lie, in the transcript: every `assistant` line's `message.model` must read `claude-haiku-4-5-20251001`. Through the composer, ask for `model: haiku` on the request.
+- **Never kill processes by filtering on `claude.exe`.** To bring a count down, close the terminal. A `taskkill /T /F` over a name takes out the agent running the test along with the target.
+
+What has been proved, and how, so nothing is re-argued from memory:
 
 | Check | How, and what it turned on |
 | --- | --- |
@@ -56,7 +65,16 @@ There is no test suite. It is checked against a real server and a real phone —
 | A stop arriving | open a session through the composer with `model: haiku`, let it finish, watch for `raised finished` in logcat |
 | `needs-you` | ask that session to use `AskUserQuestion`; the notification must land on the high-importance channel carrying the CLI's own `waitingFor` |
 | The mirror, both ways | `POST /api/notifications/dismiss` on the server withdraws it from the phone; opening the session **from** the phone empties the bell |
-| **Doze** | `input keyevent 223`, `dumpsys battery unplug`, `dumpsys deviceidle force-idle`, then trigger a stop. `mWakefulness=Dozing`, `mScreenOn=false`, `mCharging=false` and `mState=IDLE` must hold **before and after**. Measured: the notification arrived **5 s** after the prompt, through deep idle. Always `unforce` and `battery reset` afterwards |
+| Counts, live | start a session on the server's machine: the card goes to `1 working` and the notice to the aggregate **with nobody touching the phone**. Provoke a permission → `1 waiting`. Close the terminal → it drops. `live on <server>` in logcat is the count that was believed |
+| Nothing open | with no `claude` anywhere, the card must show **no counts line at all** — not `0 idle` |
+| A `--print` run | it registers a pid and reports no status, so it must count as none of the three: logcat says `(1 not saying)` and the numbers do not move |
+| A muted server | still connects, still counts, still says `· muted`, and raises **nothing** |
+| The quote | expand a `needs-you`: collapsed is still `Waiting for you — …`, expanded gains the tool and the command. Needs a server new enough to send `preview` — 1.19.2 does not |
+| The quote does not buzz twice | the delicate one: the quote arrives on a **second** event. logcat must read `raised` then `redrew`, and the phone must vibrate **once** |
+| The quote does not resurrect | swipe a notification within a second of it landing; the quote arriving after must not bring it back |
+| A cut quote | a long plan: the last line must read `— cut at N of M characters` |
+| A server with no quote | point the app at 1.19.2: the notification must look exactly as it did before, with no gaps or empty lines |
+| **Doze** | `input keyevent 223`, `dumpsys battery unplug`, `dumpsys deviceidle force-idle`, then trigger a stop. `mWakefulness=Dozing`, `mScreenOn=false`, `mCharging=false` and `mState=IDLE` must hold **before and after**. Measured: the notification arrived **5 s** after the prompt, through deep idle. Always `unforce` and `battery reset` afterwards. **Re-measure it**: more streams are held open now, and every configured server is watched |
 | Updating | cut two releases and let the app cross between them; expect Play Protect (see the README) |
 
 Two things the DT50 cannot check, so do not waste time trying:
