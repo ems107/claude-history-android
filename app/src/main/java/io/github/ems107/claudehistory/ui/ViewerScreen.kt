@@ -417,9 +417,10 @@ private const val PINCH_MAX = 10f
  * - **on** -- 1280 px, so 100 % is the desktop layout scaled to fit.
  *
  * The consequence worth knowing: zooming in inside desktop mode narrows the
- * layout, and claude-history's own `md` breakpoint is 768 px, so somewhere past
- * 160 % the desktop layout gives way to the phone one at a larger size. That is
- * what reflowing MEANS, and a desktop browser does the same to a 1280 px window.
+ * layout, and claude-history's own `md` breakpoint is 768 px -- so at 170 %,
+ * where 1280 becomes 753, the desktop layout gives way to the phone one at a
+ * larger size. That is what reflowing MEANS, and a desktop browser does the same
+ * to a 1280 px window.
  * Reading the wide layout closer is the pinch's job, not this one's.
  *
  * It replaces the page's own tag rather than fighting it, because
