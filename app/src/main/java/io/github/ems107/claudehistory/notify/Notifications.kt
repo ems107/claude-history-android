@@ -72,14 +72,24 @@ object Notifications {
 }
 
 /**
- * The phone shows exactly what the bell shows.
+ * The phone shows what the bell shows, and then says so when it stops.
  *
- * That is the rule this class exists to keep, and it decides every branch in it:
- * a row that appears is raised, a row that goes is withdrawn -- whoever attended
- * it, wherever they were -- and a row that merely persists is left alone. There
- * is no history here and nothing survives a restart, because the bell itself is
- * a memory of transitions that the server keeps in RAM and loses on its own
- * restart ([docs/AI_SERVER_CONTRACT.md]).
+ * A row that appears is raised, a row that merely persists is left alone, and a
+ * row the bell FORGETS -- because somebody attended that session, wherever they
+ * were -- is not taken away. It stays, marked read, until a finger removes it.
+ *
+ * That last part is a deliberate departure from mirroring, and it is worth the
+ * words. A notification that withdraws itself is a phone that buzzes, and then
+ * has nothing to show for it by the time you reach it: the stop happened, it was
+ * attended at the desk, and the only trace of either is gone. Marked read, the
+ * same sequence tells you both things -- there WAS something, and it is dealt
+ * with -- which is the sentence the shade was buzzing to say. Nothing is dismissed
+ * on the server for this. The mark is drawn here and it is only ever drawn here.
+ *
+ * A PREFERENCE hiding a row is not the bell forgetting it, and still withdraws:
+ * muting a server, or switching off one of its two kinds, is somebody asking not
+ * to see these, and leaving them behind marked read would be answering a
+ * different question.
  *
  * **"Persists" is about the stop, not about the words.** A listed row is re-read
  * rather than taken as unchanged, because the server fills in what the session
@@ -97,11 +107,19 @@ object Notifications {
  * That takes two guards rather than one: the acknowledgement arrives as a
  * broadcast and a broadcast takes its time, so the second guard is the shade
  * itself, and nothing is patched onto a notification that is no longer on it.
+ *
+ * Nothing here is persisted, and nothing needs to be. A read notification that
+ * outlives this process is left sitting on the shade with nobody remembering it,
+ * which is exactly what it was asked to do: stay until it is taken away.
  */
 class Reconciler(private val context: Context) {
 
-    /** What was drawn for a stop: which stop it was, and what it said. */
-    private data class Shown(val at: Long, val print: Int)
+    /**
+     * What was drawn for a stop: which stop it was, what it said, and the row it
+     * was said from -- because the row is needed to redraw the notification as
+     * read, and by then it has left the bell and is not coming back in an answer.
+     */
+    private data class Shown(val at: Long, val print: Int, val row: StoppedRow, val read: Boolean = false)
 
     private val shown = ConcurrentHashMap<String, Shown>()
     private val acknowledged = ConcurrentHashMap<String, Long>()
@@ -117,9 +135,14 @@ class Reconciler(private val context: Context) {
             }
         }
         val wantedByKey = wanted.associateBy { Notifications.keyOf(server.id, it.sessionId) }
+        // What the server LISTED, which is not what we want to draw: the two
+        // differ exactly by what the preferences filtered out, and that
+        // difference is what decides between marking a notification read and
+        // taking it away.
+        val listed = rows.mapTo(mutableSetOf()) { Notifications.keyOf(server.id, it.sessionId) }
 
-        // Gone from the server is gone from the phone. This is the half that
-        // makes attending a session at the desk clear the notification here.
+        val onScreen = onScreen()
+
         val prefix = server.id + "|"
         // Both maps, not only the drawn one. Swiping moves a key OUT of `shown`
         // and into `acknowledged`, so a sweep that walked `shown` alone left one
@@ -127,16 +150,33 @@ class Reconciler(private val context: Context) {
         // meant to run for days -- and with it the rule that this exact stop is
         // never to be raised again, long after the bell forgot it.
         (shown.keys + acknowledged.keys).filter { it.startsWith(prefix) && it !in wantedByKey }.forEach { key ->
+            val id = Notifications.idOf(key)
+            val before = shown[key]
+            if (key !in listed && before != null) {
+                // Already marked: it has said everything it is going to say, and
+                // the only thing left to happen to it is a finger.
+                if (before.read) return@forEach
+                // The same guard a late quote gets. Posting to an id the shade no
+                // longer holds arrives as a NEW notification, with all the noise
+                // of one -- and this one carries no news whatsoever.
+                if (onScreen == null || id in onScreen) {
+                    val print = fingerprint(server, before.row, read = true)
+                    if (post(server, key, before.row, quietly = true, read = true)) {
+                        shown[key] = before.copy(print = print, read = true)
+                        Log.i(TAG, "read " + key)
+                        return@forEach
+                    }
+                }
+            }
             if (shown.remove(key) != null) Log.i(TAG, "withdrew " + key)
-            manager.cancel(Notifications.idOf(key))
+            manager.cancel(id)
             acknowledged.remove(key)
         }
 
-        val onScreen = onScreen()
         wantedByKey.forEach { (key, row) ->
             if (acknowledged[key] == row.at) return@forEach
             val before = shown[key]
-            val print = fingerprint(server, row)
+            val print = fingerprint(server, row, read = false)
             if (before?.at == row.at && before.print == print) return@forEach
 
             val id = Notifications.idOf(key)
@@ -147,16 +187,19 @@ class Reconciler(private val context: Context) {
             // system no longer holds arrives as a NEW notification, with all the
             // noise of one.
             if (patch && onScreen != null && id !in onScreen) {
-                shown[key] = Shown(row.at, print)
+                shown[key] = Shown(row.at, print, row)
                 return@forEach
             }
-            // A stop nothing here remembers whose row is nevertheless on the
-            // shade is this process having been restarted underneath it. Update
-            // it; do not announce a stop the phone announced before it died.
-            val quietly = patch || (before == null && onScreen != null && id in onScreen)
-            if (!post(server, key, row, quietly)) return@forEach
+            // A stop nothing here remembers whose row is on the shade FOR THAT
+            // SAME STOP is this process having been restarted underneath it:
+            // update it, and do not announce a stop the phone announced before
+            // it died. A different `at` under the same id is the other case --
+            // a read leftover, with a genuinely new stop landing on top of it --
+            // and that one has to be heard.
+            val quietly = patch || (before == null && onScreen != null && onScreen[id] == row.at)
+            if (!post(server, key, row, quietly, read = false)) return@forEach
             Log.i(TAG, (if (quietly) "redrew " else "raised ") + row.kind + " for " + (row.title ?: row.sessionId))
-            shown[key] = Shown(row.at, print)
+            shown[key] = Shown(row.at, print, row)
             acknowledged.remove(key)
         }
     }
@@ -168,10 +211,18 @@ class Reconciler(private val context: Context) {
         manager.cancel(Notifications.idOf(key))
     }
 
-    /** A server that was deleted, or whose notifications were switched off. */
+    /**
+     * A server that was deleted, or switched off. Everything of its own goes
+     * with it, a notification marked read included: the app is to behave as
+     * though that server were not there.
+     *
+     * Both maps, for the reason the sweep in [apply] walks both: `acknowledge`
+     * moves a key out of `shown`, and one left in `acknowledged` outlives the
+     * server it belonged to.
+     */
     fun forget(serverId: String) {
         val prefix = serverId + "|"
-        shown.keys.filter { it.startsWith(prefix) }.forEach { key ->
+        (shown.keys + acknowledged.keys).filter { it.startsWith(prefix) }.forEach { key ->
             manager.cancel(Notifications.idOf(key))
             shown.remove(key)
             acknowledged.remove(key)
@@ -185,12 +236,20 @@ class Reconciler(private val context: Context) {
     }
 
     /**
-     * Which of our notifications the shade is holding, or null for "could not
-     * ask" -- which is not the same as "none", and the difference decides
-     * whether a late quote is drawn or dropped.
+     * Which of our notifications the shade is holding and WHICH STOP each one is
+     * for, or null for "could not ask" -- which is not the same as "none", and
+     * the difference decides whether a late quote is drawn or dropped.
+     *
+     * The stop comes back as `when`, which is the `at` [post] set. Since a read
+     * notification stays on the shade after its row has left the bell, "on the
+     * shade and not remembered here" stopped meaning only one thing: it is a
+     * restarted process for the same stop, or a leftover with a new stop landing
+     * on it. The `at` is what tells those apart.
      */
-    private fun onScreen(): Set<Int>? = runCatching {
-        context.getSystemService(NotificationManager::class.java)?.activeNotifications?.map { it.id }?.toSet()
+    private fun onScreen(): Map<Int, Long>? = runCatching {
+        context.getSystemService(NotificationManager::class.java)
+            ?.activeNotifications
+            ?.associate { it.id to it.notification.`when` }
     }.getOrNull()
 
     /**
@@ -200,11 +259,15 @@ class Reconciler(private val context: Context) {
      * fields that move on their own -- `stillOpen` is recomputed on every list,
      * a title improves as the session gets indexed -- and a notification is
      * worth redrawing when it would LOOK different, not when the JSON differs.
+     * Which is why [read] belongs in here: the mark is drawn text, and a change
+     * the fingerprint cannot see is a redraw that never happens.
      */
-    private fun fingerprint(server: Server, row: StoppedRow): Int =
-        listOf(title(row), describe(row), subText(server, row), bigText(row)).joinToString(" ").hashCode()
+    private fun fingerprint(server: Server, row: StoppedRow, read: Boolean): Int =
+        listOf(title(row), describe(row, read), subText(server, row), bigText(row, read))
+            .joinToString(" ")
+            .hashCode()
 
-    private fun post(server: Server, key: String, row: StoppedRow, quietly: Boolean): Boolean {
+    private fun post(server: Server, key: String, row: StoppedRow, quietly: Boolean, read: Boolean): Boolean {
         val id = Notifications.idOf(key)
         val needsYou = row.kind == KIND_NEEDS_YOU
 
@@ -231,14 +294,18 @@ class Reconciler(private val context: Context) {
         )
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(title(row))
-            .setContentText(describe(row))
+            .setContentText(describe(row, read))
             .setSubText(subText(server, row))
             // Collapsed, the state is the whole of it: it is what decides
             // whether this is worth walking to a desk for. The quote is what
             // the extra height is for, so it lives only in here -- and the
             // state is repeated, because an expanded style REPLACES the line
             // above rather than adding to it.
-            .setStyle(NotificationCompat.BigTextStyle().bigText(bigText(row)))
+            .setStyle(NotificationCompat.BigTextStyle().bigText(bigText(row, read)))
+            // Read ones sink below the rest. The channel is not changed for it:
+            // Android only moves a notification between channels by cancelling
+            // and posting again, which is the one thing this must not do.
+            .setSortKey(if (read) "1" else "0")
             .setWhen(row.at)
             .setShowWhen(true)
             .setAutoCancel(true)
@@ -279,12 +346,24 @@ class Reconciler(private val context: Context) {
     private fun title(row: StoppedRow): String =
         row.title?.takeIf { it.isNotBlank() } ?: "Untitled session"
 
-    private fun describe(row: StoppedRow): String = when (row.kind) {
-        KIND_NEEDS_YOU -> row.waitingFor?.takeIf { it.isNotBlank() }
-            ?.let { "Waiting for you — $it" }
-            ?: "Waiting for you"
+    /**
+     * The line that decides whether this is worth walking to a desk for, and --
+     * once somebody else has walked to it -- that it no longer is.
+     *
+     * The mark goes here rather than in the header because this is the line that
+     * gets read: it is in front of the state, collapsed and expanded both, and
+     * it is the only thing on the notification that changes when a row leaves
+     * the bell.
+     */
+    private fun describe(row: StoppedRow, read: Boolean): String {
+        val state = when (row.kind) {
+            KIND_NEEDS_YOU -> row.waitingFor?.takeIf { it.isNotBlank() }
+                ?.let { "Waiting for you — $it" }
+                ?: "Waiting for you"
 
-        else -> "Finished"
+            else -> "Finished"
+        }
+        return if (read) "✓ Read · $state" else state
     }
 
     private fun subText(server: Server, row: StoppedRow): String {
@@ -300,9 +379,10 @@ class Reconciler(private val context: Context) {
      * be: a server older than the quote sends none, and a turn that ended
      * holding nothing quotable has none to send.
      */
-    private fun bigText(row: StoppedRow): String {
+    private fun bigText(row: StoppedRow, read: Boolean): String {
+        val state = describe(row, read)
         val quote = row.preview?.let { quote(it) }.orEmpty()
-        return if (quote.isEmpty()) describe(row) else describe(row) + "\n\n" + quote
+        return if (quote.isEmpty()) state else state + "\n\n" + quote
     }
 
     /**
