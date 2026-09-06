@@ -368,10 +368,10 @@ private const val MIN_CHROME = 111
 private const val DESKTOP_WIDTH = 1280
 
 /** Page zoom, in per cent of the page's own natural width. */
-const val ZOOM_MIN = 30
-const val ZOOM_MAX = 300
-const val ZOOM_STEP = 10
-const val ZOOM_DEFAULT = 100
+private const val ZOOM_MIN = 30
+private const val ZOOM_MAX = 300
+private const val ZOOM_STEP = 10
+private const val ZOOM_DEFAULT = 100
 
 /**
  * How wide to lay the page out, and how big to draw it -- which are the same
