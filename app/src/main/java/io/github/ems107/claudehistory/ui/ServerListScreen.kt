@@ -115,14 +115,26 @@ private fun ServerCard(
     onEdit: () -> Unit,
 ) {
     Card(
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onOpen),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+        // A disabled server is drawn and can be edited, and that is all: the card
+        // stops being a way in, so the Edit button is the only one left.
+        modifier = Modifier.fillMaxWidth().clickable(enabled = server.enabled, onClick = onOpen),
+        colors = if (server.enabled) {
+            CardDefaults.cardColors()
+        } else {
+            CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
+        },
+        elevation = CardDefaults.cardElevation(defaultElevation = if (server.enabled) 1.dp else 0.dp),
     ) {
         Column(Modifier.padding(14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     server.label(),
                     style = MaterialTheme.typography.titleMedium,
+                    color = if (server.enabled) {
+                        MaterialTheme.colorScheme.onSurface
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f),
@@ -139,7 +151,7 @@ private fun ServerCard(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            Box(Modifier.padding(top = 6.dp)) { StateLine(state, live, busy) }
+            Box(Modifier.padding(top = 6.dp)) { StateLine(server, state, live, busy) }
             val counts = live?.counts
             // Nothing at all rather than three zeros: a count you have to read
             // before you can ignore it is worse than a line that is not there.
@@ -159,8 +171,13 @@ private fun ServerCard(
  * a server that had been off for an hour.
  */
 @Composable
-private fun StateLine(state: Connection?, live: ServerLive?, busy: Boolean) {
+private fun StateLine(server: Server, state: Connection?, live: ServerLive?, busy: Boolean) {
     val (text, colour) = when {
+        // First, because nothing else can be true of it: the service dropped its
+        // live state when it was switched off, and `state` is whatever it last
+        // answered before that.
+        !server.enabled -> "Disabled" to MaterialTheme.colorScheme.onSurfaceVariant
+
         live != null -> live.connection to when {
             live.connected -> Ok
             live.refused -> MaterialTheme.colorScheme.error

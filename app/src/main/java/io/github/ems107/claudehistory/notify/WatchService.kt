@@ -21,6 +21,7 @@ import io.github.ems107.claudehistory.ClaudeHistoryApp
 import io.github.ems107.claudehistory.MainActivity
 import io.github.ems107.claudehistory.R
 import io.github.ems107.claudehistory.data.Server
+import io.github.ems107.claudehistory.data.watched
 import io.github.ems107.claudehistory.net.Connection
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -33,6 +34,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.conflate
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
@@ -62,10 +64,17 @@ import kotlinx.coroutines.sync.withLock
  * "2 waiting" about a machine that has been off the network for an hour is the
  * kind of true-an-hour-ago that gets somebody to walk to a desk for nothing.
  *
- * **Every configured server is watched, a muted one included.** Notification
+ * **Every ENABLED server is watched, a muted one included.** Notification
  * preferences decide whether a stop is ANNOUNCED, not whether the server is
  * looked at: its counts are worth the same either way, and a preference changed
  * at the desk now arrives on the next event instead of within ten minutes.
+ *
+ * **Disabling a server is the other thing, and it is not a louder mute.** A
+ * server switched off in its own settings never reaches this service at all: it
+ * is not connected to, not counted, and not a line on the permanent notice. The
+ * two states are told apart on purpose -- `· muted` says something is being
+ * watched for you and will not speak, and a disabled server is not being watched
+ * for you at all.
  */
 class WatchService : Service() {
 
@@ -109,8 +118,13 @@ class WatchService : Service() {
         Notifications.ensureChannels(this)
         startForegroundNotice()
 
+        // Only the servers that are switched on: a disabled one has to reach
+        // [syncJobs] as ABSENT, so that it takes the same path a deleted one
+        // does -- job cancelled, notifications withdrawn, card state dropped.
         scope.launch {
-            graph.store.servers.collect { servers -> syncJobs(servers) }
+            graph.store.servers.map { it.watched() }
+                .distinctUntilChanged()
+                .collect { servers -> syncJobs(servers) }
         }
 
         // The notice follows what the two of them SAY, not every time they
@@ -118,7 +132,9 @@ class WatchService : Service() {
         // count -- a turn's clock, a session's name -- and each redraw is a
         // binder round-trip and a re-inflation in the shade.
         scope.launch {
-            combine(graph.store.servers, graph.watch.servers) { servers, live -> notice(servers, live) }
+            combine(graph.store.servers.map { it.watched() }, graph.watch.servers) { servers, live ->
+                notice(servers, live)
+            }
                 .distinctUntilChanged()
                 .conflate()
                 .collect { show(it) }
@@ -177,6 +193,8 @@ class WatchService : Service() {
                 jobs[server.id] = watch(server.id)
             }
         }
+        // Nothing left to watch -- every server deleted, or every one of them
+        // switched off, which reaches here as the same empty list.
         if (servers.isEmpty()) {
             reconciler.forgetAll()
             stopSelf()
@@ -195,6 +213,10 @@ class WatchService : Service() {
      * `lastGoodUrl` is deliberately not here. The client writes it back on every
      * successful failover, which re-emits the server list, which would restart
      * the job that had just succeeded -- forever.
+     *
+     * Neither is `enabled`, and for a different reason: the list this service
+     * sees is already filtered to the switched-on ones, so a server changing
+     * that arrives here as an appearance or a disappearance, never as an edit.
      */
     private fun sameWatch(before: Server?, now: Server): Boolean =
         before != null &&
@@ -372,7 +394,7 @@ class WatchService : Service() {
             Build.VERSION.SDK_INT >= 29 -> ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
             else -> 0
         }
-        val first = notice(graph.store.servers.value, graph.watch.servers.value)
+        val first = notice(graph.store.servers.value.watched(), graph.watch.servers.value)
         ServiceCompat.startForeground(this, Notifications.WATCHING_ID, build(first), type)
     }
 

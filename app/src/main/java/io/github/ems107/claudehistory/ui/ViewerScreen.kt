@@ -70,6 +70,11 @@ fun ViewerScreen(
         if (state !is Connection.Ready) viewModel.refresh(serverId)
     }
 
+    // Belt and braces: a disabled server raises no notifications and its card is
+    // not a way in, so nothing should arrive here -- but the rule is that it
+    // cannot be opened, and this is where opening happens.
+    val off = server != null && !server.enabled
+
     /** Back means back through the pages first, and out of the viewer last. */
     fun goBack() {
         val view = WebViewCache.get(serverId)
@@ -98,7 +103,7 @@ fun ViewerScreen(
                     WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom),
                 ),
         ) {
-            when (val current = state) {
+            when (val current = if (off) null else state) {
                 is Connection.Ready -> {
                     val cookie = viewModel.sessionCookie(current.baseUrl)
                     val target = current.baseUrl.trimEnd('/') + startPath
@@ -115,7 +120,11 @@ fun ViewerScreen(
                     }
                 }
 
-                null -> CentredMessage("Connecting...", spinner = serverId in connecting)
+                null -> if (off) {
+                    CentredMessage("This server is disabled. Turn it back on in its settings.")
+                } else {
+                    CentredMessage("Connecting...", spinner = serverId in connecting)
+                }
                 is Connection.Refused -> CentredMessage(current.detail)
                 is Connection.Unreachable -> CentredMessage(current.detail)
             }

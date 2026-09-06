@@ -4,6 +4,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import io.github.ems107.claudehistory.ClaudeHistoryApp
+import io.github.ems107.claudehistory.data.watched
 
 /**
  * A phone that restarts in the night must not go quiet until somebody opens the
@@ -13,7 +14,7 @@ class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action != Intent.ACTION_BOOT_COMPLETED) return
         val app = context.applicationContext as? ClaudeHistoryApp ?: return
-        if (app.store.servers.value.isEmpty()) return
+        if (app.store.servers.value.watched().isEmpty()) return
         WatchService.start(context)
     }
 }
