@@ -226,9 +226,14 @@ private fun ServerCard(
                 overflow = TextOverflow.Ellipsis,
             )
             Box(Modifier.padding(top = 6.dp)) { StateLine(server, state, live, busy) }
-            val counts = live?.counts
             // Nothing at all rather than three zeros: a count you have to read
             // before you can ignore it is worse than a line that is not there.
+            //
+            // And nothing at all for a server that is off, rather than waiting
+            // for the service to drop its live state: that takes a moment, and
+            // for that moment the card reads "Disabled" over a count of what is
+            // running, which is two answers to the same question.
+            val counts = live?.counts?.takeIf { server.enabled }
             if (counts != null && counts.total > 0) {
                 CountsLine(counts, Modifier.padding(top = 4.dp))
             }
