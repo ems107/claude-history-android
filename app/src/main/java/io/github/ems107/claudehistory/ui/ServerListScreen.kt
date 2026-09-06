@@ -50,6 +50,7 @@ import io.github.ems107.claudehistory.Waiting
 import io.github.ems107.claudehistory.data.Server
 import io.github.ems107.claudehistory.net.Connection
 import io.github.ems107.claudehistory.notify.LiveCounts
+import io.github.ems107.claudehistory.notify.LiveKind
 import io.github.ems107.claudehistory.notify.ServerLive
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -285,19 +286,26 @@ private fun StateLine(server: Server, state: Connection?, live: ServerLive?, bus
 }
 
 /**
- * What is alive over there, in the same three words the session list uses for
- * the same three states -- the person reading this reads that too.
+ * What is alive over there, in the same words the session list uses for the same
+ * states -- the person reading this reads that too. `finished` is the exception,
+ * because the web has no such state: it is the idle ones the bell is still
+ * holding, and it is green because it is the one that is good news.
+ *
+ * The fragments are [LiveCounts.parts]' rather than this screen's, because the
+ * permanent notice draws the same list joined with commas. All this adds is the
+ * colour, which is the one thing a notification cannot have.
  */
 @Composable
 private fun CountsLine(counts: LiveCounts, modifier: Modifier = Modifier) {
-    val parts = buildList {
-        if (counts.waiting > 0) add("${counts.waiting} waiting" to Waiting)
-        if (counts.working > 0) add("${counts.working} working" to MaterialTheme.colorScheme.primary)
-        if (counts.idle > 0) add("${counts.idle} idle" to MaterialTheme.colorScheme.onSurfaceVariant)
-    }
     Row(modifier, verticalAlignment = Alignment.CenterVertically) {
-        parts.forEachIndexed { index, (text, colour) ->
+        counts.parts().forEachIndexed { index, (kind, text) ->
             if (index > 0) Dot()
+            val colour = when (kind) {
+                LiveKind.WAITING -> Waiting
+                LiveKind.WORKING -> MaterialTheme.colorScheme.primary
+                LiveKind.FINISHED -> Ok
+                LiveKind.IDLE -> MaterialTheme.colorScheme.onSurfaceVariant
+            }
             Text(text, style = MaterialTheme.typography.bodySmall, color = colour)
         }
     }

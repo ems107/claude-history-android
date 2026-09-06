@@ -54,9 +54,13 @@ An OkHttp `CookieJar` sees none of the browser semantics, which is what makes sh
 
 ### A stop is a transition, and the list is memory
 
-The bell only ever holds sessions seen to **leave** `busy` while that server process was running, and it holds them in RAM. **A server restart empties it**, and our notifications empty with it. That is not a bug to work around: it is what "mirror" means, and a phone that kept showing a stop the server has forgotten would be showing something nobody can act on.
+The bell only ever holds sessions seen to **leave** `busy` while that server process was running, and it holds them in RAM. **A server restart empties it.**
 
-Four things withdraw a row on the server — visiting the session, dismissing it, clearing the bell, and the `claude` process going away — and all four reach us as the row simply not being in the next answer.
+Four things withdraw a row on the server — visiting the session, dismissing it, clearing the bell, and the `claude` process going away — and all four reach us as the row simply not being in the next answer. **The row leaving is not the notification leaving.** The phone keeps it, marked read, until somebody takes it away: what the row's disappearance actually says is "this was attended", and that is worth telling rather than erasing. A server restart therefore marks every notification read at once, which is the honest reading of it — nobody can act on those rows any more — and is in any case the defect worth having, since the alternative is the phone quietly emptying itself.
+
+The row itself is gone by the time this is noticed, so `notify/Notifications.kt` keeps the last one it drew from. Nothing is dismissed on the server for any of it, and this app still never calls `/api/notifications/dismiss`.
+
+`sessionId` is the same key here and in `/api/live`, which is the whole of the app's `finished` count: a live session at rest whose row the bell is still holding has not been looked at. The server keeps the two apart on purpose — a stop is a transition, the live list is a state — so that crossing lives on the phone and is not to be asked of the API.
 
 ### A row still listed is re-read, not taken as unchanged
 
