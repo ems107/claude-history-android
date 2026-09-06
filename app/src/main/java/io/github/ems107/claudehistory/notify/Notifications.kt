@@ -127,14 +127,8 @@ class Reconciler(private val context: Context) {
     private val manager get() = NotificationManagerCompat.from(context)
 
     fun apply(server: Server, rows: List<StoppedRow>, prefs: EffectiveNotify) {
-        val wanted = if (!prefs.enabled) emptyList() else rows.filter {
-            when (it.kind) {
-                KIND_NEEDS_YOU -> prefs.needsYou
-                KIND_FINISHED -> prefs.finished
-                else -> false
-            }
-        }
-        val wantedByKey = wanted.associateBy { Notifications.keyOf(server.id, it.sessionId) }
+        val wantedByKey = rows.filter { wants(prefs, it) }
+            .associateBy { Notifications.keyOf(server.id, it.sessionId) }
         // What the server LISTED, which is not what we want to draw: the two
         // differ exactly by what the preferences filtered out, and that
         // difference is what decides between marking a notification read and
@@ -152,7 +146,12 @@ class Reconciler(private val context: Context) {
         (shown.keys + acknowledged.keys).filter { it.startsWith(prefix) && it !in wantedByKey }.forEach { key ->
             val id = Notifications.idOf(key)
             val before = shown[key]
-            if (key !in listed && before != null) {
+            // Marked read only when the BELL let it go and the preferences would
+            // still have drawn it. Both halves matter: a preference is somebody
+            // asking not to see these at all, and it applies to one already
+            // marked just as much as to one that never was -- muting a server
+            // clears its notifications, which is what it has always done.
+            if (key !in listed && before != null && wants(prefs, before.row)) {
                 // Already marked: it has said everything it is going to say, and
                 // the only thing left to happen to it is a finger.
                 if (before.read) return@forEach
@@ -202,6 +201,20 @@ class Reconciler(private val context: Context) {
             shown[key] = Shown(row.at, print, row)
             acknowledged.remove(key)
         }
+    }
+
+    /**
+     * Whether this row is one to draw at all.
+     *
+     * Asked of a row that has LEFT the bell as well as of one still in it, which
+     * is why it is a function rather than a filter written into [apply]: the two
+     * questions have to be answered the same way, or muting a server would leave
+     * its read notifications sitting there.
+     */
+    private fun wants(prefs: EffectiveNotify, row: StoppedRow): Boolean = prefs.enabled && when (row.kind) {
+        KIND_NEEDS_YOU -> prefs.needsYou
+        KIND_FINISHED -> prefs.finished
+        else -> false
     }
 
     /** Swiped away or opened: seen, and not to be raised again for the same stop. */
