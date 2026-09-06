@@ -326,6 +326,10 @@ class WatchService : Service() {
         val prefs = server.effectiveNotify(graph.client.serverSettings(server, base))
         Log.i(TAG, "bell for " + server.label() + ": " + rows.size + " stopped, notify=" + prefs)
         graph.watch.muted(serverId, prefs.silent())
+        // The raw bell, before the preferences have had a say: what is finished
+        // rather than merely idle is a fact about that server, and silencing one
+        // makes it quiet, not uncounted.
+        graph.watch.pending(serverId, rows.mapTo(mutableSetOf()) { it.sessionId })
         reconciler.apply(server, rows, prefs)
     }
 
@@ -340,14 +344,17 @@ class WatchService : Service() {
     private suspend fun count(serverId: String, base: String) {
         val server = graph.store.get(serverId) ?: return
         val rows = graph.client.live(server, base) ?: return
-        val counts = LiveCounts.of(rows)
-        val unsaid = rows.size - counts.total
+        val live = LiveSnapshot.of(rows)
+        // What the state made of it once it was crossed with the bell, rather
+        // than a second sum worked out beside it: the log is meant to be the
+        // number that was BELIEVED.
+        val counts = graph.watch.counted(serverId, live) ?: LiveCounts.of(live)
+        val unsaid = live.rows - counts.total
         Log.i(
             TAG,
             "live on " + server.label() + ": " + counts.say().ifEmpty { "nothing open" } +
                 if (unsaid > 0) " (" + unsaid + " not saying)" else "",
         )
-        graph.watch.counted(serverId, counts)
     }
 
     private fun shortOf(connection: Connection): String = when (connection) {

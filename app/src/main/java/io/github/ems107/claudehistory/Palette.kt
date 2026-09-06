@@ -86,6 +86,11 @@ val DarkScheme = darkColorScheme(
  * for signed in, amber for a session waiting on a person, the accent for one
  * that is answering, and the muted grey for one at rest.
  *
+ * Green does double duty for a session that finished and has not been looked at
+ * yet, which is a state the web does not have. It is the same sentence in both
+ * places -- this is the good news on the card -- and inventing a fifth colour to
+ * say it would only make the line harder to read at a glance.
+ *
  * They come in pairs because this app has a light ground and a dark one and the
  * web only ever had the dark: `amber-400` reads as a warning on `#1F1E1C` and as
  * a highlighter pen on `#FAF9F5`, and the green that works on paper goes nearly
@@ -97,7 +102,7 @@ private val OkOnInk = Color(0xFF7CC47F)
 private val WaitingOnPaper = Color(0xFFB45309)
 private val WaitingOnInk = Color(0xFFFBBF24)
 
-/** Signed in. */
+/** Signed in, and a turn that finished. */
 val Ok: Color
     @Composable get() = if (isSystemInDarkTheme()) OkOnInk else OkOnPaper
 
