@@ -277,7 +277,8 @@ class ServerClient(private val store: ServerStore) {
     /** The server's own notification preferences, which ours inherit. */
     suspend fun serverSettings(server: Server, base: String): ServerSettings? {
         val body = getText(server, base, "/api/settings") ?: return null
-        return decode("the settings", body) { json.decodeFromString<ServerSettings>(body) }
+        // Through the envelope, never the top level: see [SettingsEnvelope].
+        return decode("the settings", body) { json.decodeFromString<SettingsEnvelope>(body).settings }
     }
 
     /**

@@ -134,5 +134,24 @@ data class ServerSettings(
     val notifyOnFinished: Boolean = true,
 )
 
+/**
+ * The envelope `/api/settings` actually answers with, and the reason it is here
+ * rather than being decoded away.
+ *
+ * The preferences arrive **under a `settings` key**, beside a `paths` object
+ * this app has no use for. Read at the top level they are simply absent -- and
+ * absent is invisible, because `ignoreUnknownKeys` swallows the two keys that
+ * ARE there and every field above has a default. The decode succeeds, answers
+ * "everything on", and looks exactly like a server with everything on. Which is
+ * the server's own default, so the wrong answer agrees with the right one until
+ * somebody actually turns something off over there -- and then `Inherit` on the
+ * phone quietly means `On` forever.
+ *
+ * The default here is what a shape we cannot read has to mean: the same
+ * fallback `serverSettings()` already returns for a request that failed.
+ */
+@Serializable
+data class SettingsEnvelope(val settings: ServerSettings = ServerSettings())
+
 const val KIND_NEEDS_YOU = "needs-you"
 const val KIND_FINISHED = "finished"

@@ -1,6 +1,6 @@
 # What this app needs from a claude-history server
 
-**Load this before touching anything under `net/`.** It is the whole surface: six endpoints, one cookie and four traps. Everything here was read out of the server's source and measured against a live instance; the *reasoning* behind each rule lives in that project's `docs/AI_REMOTE_ACCESS.md` and is not repeated.
+**Load this before touching anything under `net/`.** It is the whole surface: six endpoints, one cookie and five traps. Everything here was read out of the server's source and measured against a live instance; the *reasoning* behind each rule lives in that project's `docs/AI_REMOTE_ACCESS.md` and is not repeated.
 
 ## Invariants
 
@@ -18,7 +18,7 @@
 | GET | `/api/notifications` | `{stopped: StoppedSessionEntry[]}`, newest first — the whole notification model |
 | GET | `/api/live` | `LiveSessionEntry[]` — what is running over there this moment, which is what the cards and the permanent notice count |
 | GET | `/api/events` | SSE. We care about two events, `{"type":"notifications-changed"}` and `{"type":"live-changed"}`; everything else is for the web UI |
-| GET | `/api/settings` | the server's own notification preferences, which ours inherit: `notifyEnabled`, `notifyOnNeedsYou`, `notifyOnFinished` |
+| GET | `/api/settings` | the server's own notification preferences, which ours inherit: `notifyEnabled`, `notifyOnNeedsYou`, `notifyOnFinished`. **They arrive under a `settings` key**, beside a `paths` object — this is the only endpoint here whose payload is wrapped in something other than its own name, and reading it at the top level is a silent failure, not a loud one (see the fifth trap) |
 
 `GET /api/meta` earns a seventh line for diagnostics alone: it carries the server's `version` and whether it is a dev instance. **Read it before concluding this app failed to parse something.** A field that arrives null on every row, or a shape that decodes into nothing, is a server too old to send it at least as often as it is a bug here — and the two look identical from the phone. The version is never worth writing down, only asking for: it moves whenever the user installs a release.
 
@@ -38,7 +38,7 @@ Everything a notification needs is in there. There is no second call.
 
 Two things this list is not. It is **not the bell**: a stop is a transition and this is a state, so every terminal somebody left open is in here, resting — which is exactly why the bell is kept server-side instead of derived from this. And it **includes the server's own `--print` runs**, which register a pid and report no status of their own; the server paints `busy`/`waiting` over the ones it started itself, and anything else is `unknown`.
 
-## The four traps
+## The five traps
 
 ### A POST with no `Origin` is refused, and only from another machine
 
@@ -67,6 +67,16 @@ The row itself is gone by the time this is noticed, so `notify/Notifications.kt`
 **The quote arrives on a second answer.** The server raises the row the instant the session stops — synchronously, so that `at` is honest — and reads the transcript a beat later, patching the row and emitting a **second** `notifications-changed`. That second row carries the same `sessionId` and the same `at`, and differs only in `preview`. It can also arrive minutes later: a session with no transcript yet is put on a retry list and filled in when one appears.
 
 So **`at` says which stop it is, and nothing about what the row now says**. Deciding a listed row is a row already handled is how the web spent a while drawing every card without its quote, and it is the same mistake waiting here — with a second edge of its own, because redrawing an Android notification is only silent while the shade still holds it. `notify/Notifications.kt` has the whole rule.
+
+### A decode that reads nothing succeeds
+
+`GET /api/settings` answers `{"settings": {…}, "paths": {…}}`. Decoded at the top level — which is what it did until it was caught — the three preferences are simply not there, and **nothing says so**: `ignoreUnknownKeys` swallows `settings` and `paths`, every field on `ServerSettings` has a default, so the decode succeeds and reports everything on. `decode()` logs nothing, because nothing threw.
+
+It stayed hidden for as long as it did because the server's own default is everything on, so the invented answer agreed with the real one until somebody actually switched a preference off over there. Then the phone's `Inherit` — the default, and what its edit screen recommends — silently meant `On`, forever.
+
+The lesson is bigger than the one endpoint. **A default on every field plus `ignoreUnknownKeys` is a decoder that cannot fail**, and the two are on for good reasons: the first keeps an older server from throwing, the second keeps a newer one from throwing. Together they turn "I read the wrong shape" into "everything is at its default", and those are indistinguishable from the outside. So when a field seems stuck at its default, check the SHAPE before believing the value — `curl` the endpoint and compare it against the DTO, rather than reasoning about what should have been sent. `/api/meta` is the other half of the same habit.
+
+Every other endpoint here is either wrapped in a key this app decodes (`{stopped: …}`) or a bare array. `/api/settings` is the only one wrapped in something else, and `SettingsEnvelope` exists to say so in the one place a reader will already be looking.
 
 ## Reaching the server at all
 
