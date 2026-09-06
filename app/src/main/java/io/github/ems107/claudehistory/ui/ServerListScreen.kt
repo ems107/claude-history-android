@@ -366,7 +366,8 @@ private class Reorder(private val state: LazyListState) {
         // touch event can arrive between two layout passes -- and deciding a
         // crossing from stale positions is how a card oscillates in place.
         val onScreen = visible.mapNotNull { it.key as? String }.filter { it != BANNER }
-        if (onScreen != list.map { it.id }.filter { it in onScreen.toSet() }) return
+        val seen = onScreen.toSet()
+        if (onScreen != list.map { it.id }.filter { it in seen }) return
 
         val held = visible.firstOrNull { it.key == id } ?: return
         val centre = held.offset + held.size / 2f + offset

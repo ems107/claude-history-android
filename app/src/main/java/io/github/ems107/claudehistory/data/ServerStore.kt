@@ -50,12 +50,18 @@ class ServerStore(context: Context) {
      *
      * There is nothing to store: the order has always been the order of the JSON
      * array. What was missing was a way to change it.
+     *
+     * Written only when it actually changed, like [rememberGoodUrl] and for the
+     * same reason: a long press that is let go of without moving anything is one
+     * gesture away at all times, and it has nothing to save.
      */
     @Synchronized
     fun reorder(ids: List<String>) {
         val byId = _servers.value.associateBy { it.id }
         val named = ids.toSet()
-        _servers.value = ids.mapNotNull { byId[it] } + _servers.value.filterNot { it.id in named }
+        val next = ids.mapNotNull { byId[it] } + _servers.value.filterNot { it.id in named }
+        if (next == _servers.value) return
+        _servers.value = next
         write()
     }
 

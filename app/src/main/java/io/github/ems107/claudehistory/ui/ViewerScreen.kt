@@ -53,6 +53,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -282,8 +284,11 @@ private fun BarButton(
 
 /**
  * Zoom out, the number, zoom in -- as one control, because they are one idea.
- * The number is what makes the buttons worth having over a pinch: it says where
- * you are, and it is the only thing that can, since the page zoom is ours.
+ *
+ * The number is the LAYOUT zoom and nothing else: how wide the page is being
+ * laid out, as a percentage of what the desktop switch would give on its own. A
+ * pinch does not move it, and is not meant to -- the two are separate, and this
+ * is the one of them that can be written down.
  */
 @Composable
 private fun ZoomPill(zoom: Int, onZoom: (Int) -> Unit) {
@@ -292,7 +297,9 @@ private fun ZoomPill(zoom: Int, onZoom: (Int) -> Unit) {
         color = MaterialTheme.colorScheme.surfaceContainerHighest,
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            ZoomStep("−", enabled = zoom > ZOOM_MIN) { onZoom((zoom - ZOOM_STEP).coerceAtLeast(ZOOM_MIN)) }
+            ZoomStep("−", "Zoom out", enabled = zoom > ZOOM_MIN) {
+                onZoom((zoom - ZOOM_STEP).coerceAtLeast(ZOOM_MIN))
+            }
             Text(
                 "$zoom%",
                 style = MaterialTheme.typography.labelSmall,
@@ -301,14 +308,24 @@ private fun ZoomPill(zoom: Int, onZoom: (Int) -> Unit) {
                 textAlign = TextAlign.Center,
                 modifier = Modifier.width(38.dp),
             )
-            ZoomStep("+", enabled = zoom < ZOOM_MAX) { onZoom((zoom + ZOOM_STEP).coerceAtMost(ZOOM_MAX)) }
+            ZoomStep("+", "Zoom in", enabled = zoom < ZOOM_MAX) {
+                onZoom((zoom + ZOOM_STEP).coerceAtMost(ZOOM_MAX))
+            }
         }
     }
 }
 
+/**
+ * A step of the pill. The glyph is drawn and the label is spoken, because "minus"
+ * read out of a bar of buttons says nothing about what it takes away.
+ */
 @Composable
-private fun ZoomStep(glyph: String, enabled: Boolean, onClick: () -> Unit) {
-    IconButton(onClick = onClick, enabled = enabled, modifier = Modifier.size(36.dp)) {
+private fun ZoomStep(glyph: String, description: String, enabled: Boolean, onClick: () -> Unit) {
+    IconButton(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = Modifier.size(36.dp).semantics { contentDescription = description },
+    ) {
         Text(
             glyph,
             style = MaterialTheme.typography.titleMedium,
@@ -438,7 +455,7 @@ private fun viewportScript(base: Int, desktop: Boolean, zoom: Int): String {
 }
 
 /** How the page is being drawn for one server, until the viewer is left. */
-private data class ViewMode(val desktop: Boolean = false, val zoom: Int = ZOOM_DEFAULT)
+private data class ViewMode(val desktop: Boolean, val zoom: Int)
 
 /**
  * The WebView the viewer is showing, and the two things that outlive a
