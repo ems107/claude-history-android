@@ -34,6 +34,16 @@ data class Server(
     val notifyEnabled: Toggle = Toggle.INHERIT,
     val notifyNeedsYou: Toggle = Toggle.INHERIT,
     val notifyFinished: Toggle = Toggle.INHERIT,
+    /**
+     * Off, and the app behaves as though this server were not there: it is not
+     * watched, it raises nothing, it is not counted or listed anywhere, and it
+     * cannot be opened. What it keeps is everything that was expensive to type.
+     *
+     * Deliberately NOT the same as muting. A muted server is watched and says so
+     * on the permanent notice; a disabled one is gone from it. [watched] is where
+     * the difference is applied.
+     */
+    val enabled: Boolean = true,
 ) {
     /** The order to try: what worked last time, then everything else as written. */
     fun candidates(): List<String> {
@@ -84,6 +94,7 @@ data class StoredServer(
     val notifyEnabled: Toggle = Toggle.INHERIT,
     val notifyNeedsYou: Toggle = Toggle.INHERIT,
     val notifyFinished: Toggle = Toggle.INHERIT,
+    val enabled: Boolean = true,
 )
 
 fun Server.toStored(): StoredServer = StoredServer(
@@ -96,6 +107,7 @@ fun Server.toStored(): StoredServer = StoredServer(
     notifyEnabled = notifyEnabled,
     notifyNeedsYou = notifyNeedsYou,
     notifyFinished = notifyFinished,
+    enabled = enabled,
 )
 
 fun StoredServer.toServer(): Server = Server(
@@ -108,4 +120,16 @@ fun StoredServer.toServer(): Server = Server(
     notifyEnabled = notifyEnabled,
     notifyNeedsYou = notifyNeedsYou,
     notifyFinished = notifyFinished,
+    enabled = enabled,
 )
+
+/**
+ * The servers the app is allowed to talk to at all.
+ *
+ * One name for the idea, applied at the four places that ask "is there anything
+ * to do": the watch service's two collectors, the boot receiver and the screen
+ * that starts the service. Everywhere else -- the list, the editor -- deliberately
+ * sees every server, because a disabled one still has to be drawn and turned
+ * back on.
+ */
+fun List<Server>.watched(): List<Server> = filter { it.enabled }

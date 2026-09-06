@@ -19,6 +19,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
+import io.github.ems107.claudehistory.data.watched
 import io.github.ems107.claudehistory.notify.Notifications
 import io.github.ems107.claudehistory.notify.WatchService
 import io.github.ems107.claudehistory.update.Updates
@@ -142,9 +143,11 @@ private fun App() {
     }
 
     // Nothing to watch is nothing to run: the service starts with the first
-    // server and stops itself when the last one goes.
-    LaunchedEffect(servers.isEmpty()) {
-        if (servers.isNotEmpty()) WatchService.start(context)
+    // server and stops itself when the last one goes -- or when the last one
+    // still switched on is switched off.
+    val watching = servers.watched().isNotEmpty()
+    LaunchedEffect(watching) {
+        if (watching) WatchService.start(context)
     }
 
     // The one automatic network call, once a day, and only if it is switched on.

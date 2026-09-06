@@ -17,6 +17,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -63,6 +64,7 @@ fun ServerEditScreen(
     var notifyEnabled by remember { mutableStateOf(existing?.notifyEnabled ?: Toggle.INHERIT) }
     var notifyNeedsYou by remember { mutableStateOf(existing?.notifyNeedsYou ?: Toggle.INHERIT) }
     var notifyFinished by remember { mutableStateOf(existing?.notifyFinished ?: Toggle.INHERIT) }
+    var serverOn by remember { mutableStateOf(existing?.enabled ?: true) }
 
     val states by viewModel.states.collectAsState()
     val connecting by viewModel.connecting.collectAsState()
@@ -80,6 +82,7 @@ fun ServerEditScreen(
         notifyEnabled = notifyEnabled,
         notifyNeedsYou = notifyNeedsYou,
         notifyFinished = notifyFinished,
+        enabled = serverOn,
     )
 
     Scaffold(
@@ -144,6 +147,23 @@ fun ServerEditScreen(
                 modifier = Modifier.fillMaxWidth(),
             )
 
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f).padding(end = 12.dp)) {
+                    Text("Enabled", style = MaterialTheme.typography.titleSmall)
+                    Text(
+                        "Off, the app behaves as though this server were not there: it is not " +
+                            "watched, it raises nothing, it is not counted, and it cannot be " +
+                            "opened. Its address and password are kept.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Switch(checked = serverOn, onCheckedChange = { serverOn = it })
+            }
+
             Text(
                 "Notifications",
                 style = MaterialTheme.typography.titleSmall,
@@ -161,7 +181,9 @@ fun ServerEditScreen(
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(
                     onClick = { viewModel.save(draft()) },
-                    enabled = !busy && normalizeAddresses(addresses).isNotEmpty(),
+                    // A switched-off server is never asked anything, so the button
+                    // would save and then sit there having reported nothing.
+                    enabled = serverOn && !busy && normalizeAddresses(addresses).isNotEmpty(),
                 ) { Text(if (busy) "Testing..." else "Test connection") }
 
                 Button(
