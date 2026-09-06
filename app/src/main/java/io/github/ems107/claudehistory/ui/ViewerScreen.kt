@@ -364,51 +364,75 @@ private fun OldWebViewWarning(context: Context) {
 
 private const val MIN_CHROME = 111
 
-/** The layout width "desktop" means, whatever the phone's own width is. */
+/** The width "desktop" lays the page out at, whatever the phone's own is. */
 private const val DESKTOP_WIDTH = 1280
 
-/** Page zoom, in per cent of the page's own natural width. */
+/** Layout zoom, in per cent of the width the mode above would use on its own. */
 private const val ZOOM_MIN = 30
 private const val ZOOM_MAX = 300
 private const val ZOOM_STEP = 10
 private const val ZOOM_DEFAULT = 100
 
 /**
- * How wide to lay the page out, and how big to draw it -- which are the same
- * question asked twice, so one meta tag answers both.
+ * How far a pinch is allowed to go, either way. Wide, because it is not this
+ * app's business how close somebody wants to look.
+ */
+private const val PINCH_MIN = 0.05f
+private const val PINCH_MAX = 10f
+
+/**
+ * How wide to lay the page out -- which is the only question the bar's zoom
+ * asks, and the reason it is not a pinch.
  *
- * **The zoom is a browser's page zoom, not a pinch.** A pinch magnifies a region
- * and leaves you panning; page zoom changes how many CSS pixels the window is
- * worth, so the page RE-LAYS-OUT at the new size and still fits across. That is
- * why the width and the scale always move together: at 200 % the layout is half
- * as wide in CSS pixels and drawn twice as large, which is exactly what `Ctrl +`
- * does on a desktop.
+ * **The bar re-lays the page out; the pinch magnifies it. They are separate and
+ * neither does the other's job.** Page zoom changes how many CSS pixels the
+ * window is worth, so the page reflows at the new size and still fits across;
+ * a pinch leaves the layout alone and makes a region bigger. Both are wanted,
+ * and conflating them is how zooming in ends up meaning "now scroll sideways".
  *
- * The two modes differ only in what the width is measured from:
+ * So the width is always divided by the zoom and the scale is always whatever
+ * makes that width fit the screen exactly. There is no second rule for desktop
+ * mode: the switch only decides the width the page would be laid out at with
+ * the zoom at 100.
  *
- * - **off** -- the phone's own width, so at 100 % this is precisely the
- *   `width=device-width, initial-scale=1` the page asks for, and claude-history
- *   draws the phone layout it now ships.
- * - **on** -- 1280 px scaled to fit, and the zoom multiplies from there. Above
- *   100 % that pans, and so does a desktop browser showing a page wider than its
- *   window.
+ * - **off** -- the phone's own width, so 100 % is precisely the
+ *   `width=device-width, initial-scale=1` the page asks for.
+ * - **on** -- 1280 px, so 100 % is the desktop layout scaled to fit.
  *
- * `minimum-scale` and `maximum-scale` are pinned to the same value on purpose.
- * The percentage in the bar is then the only zoom there is and cannot drift out
- * of step with the page, which is what "like a desktop browser" costs.
+ * The consequence worth knowing: zooming in inside desktop mode narrows the
+ * layout, and claude-history's own `md` breakpoint is 768 px, so somewhere past
+ * 160 % the desktop layout gives way to the phone one at a larger size. That is
+ * what reflowing MEANS, and a desktop browser does the same to a 1280 px window.
+ * Reading the wide layout closer is the pinch's job, not this one's.
  *
  * It replaces the page's own tag rather than fighting it, because
  * `useWideViewPort` is only consulted when the page does not declare one.
  */
 private fun viewportScript(base: Int, desktop: Boolean, zoom: Int): String {
     val factor = zoom / 100f
-    val width = if (desktop) DESKTOP_WIDTH else (base / factor).roundToInt().coerceAtLeast(1)
-    val scale = if (desktop) base.toFloat() / DESKTOP_WIDTH * factor else factor
+    val natural = if (desktop) DESKTOP_WIDTH else base
+    val width = (natural / factor).roundToInt().coerceAtLeast(1)
+    val scale = base.toFloat() / width
+    // Pinned first, then freed a beat later. Chromium honours `initial-scale`
+    // when the viewport description changes, but it will not pull a page back
+    // from a scale the reader chose by hand -- and after a pinch that is exactly
+    // where it is. Pinning both ends forces the new layout zoom; relaxing them
+    // hands the pinch back, at the scale that was just asserted.
+    //
+    // The pending relax is cancelled first, and that is not tidiness: each
+    // injection closes over ITS width and scale, so a timer from the previous
+    // one firing after this one has run writes the old viewport back. Tapping
+    // the zoom twice inside 50 ms is enough, and so is the bar being touched
+    // while the page is still loading.
     return """
         (function () {
           var m = document.querySelector('meta[name="viewport"]');
           if (!m) { m = document.createElement('meta'); m.setAttribute('name', 'viewport'); document.head.appendChild(m); }
+          if (window.__chFree) clearTimeout(window.__chFree);
           m.setAttribute('content', 'width=$width, initial-scale=$scale, minimum-scale=$scale, maximum-scale=$scale');
+          window.__chFree = setTimeout(function () {
+            m.setAttribute('content', 'width=$width, initial-scale=$scale, minimum-scale=$PINCH_MIN, maximum-scale=$PINCH_MAX');
+          }, 50);
         })();
     """.trimIndent()
 }
@@ -523,6 +547,12 @@ object WebViewCache {
             // tag [viewportScript] writes over it.
             settings.useWideViewPort = true
             settings.loadWithOverviewMode = true
+            // The pinch, which is the other half of the deal: the bar re-lays the
+            // page out and this makes a piece of it bigger. Without the controls
+            // enabled the meta tag's scale range is never offered to anybody.
+            settings.setSupportZoom(true)
+            settings.builtInZoomControls = true
+            settings.displayZoomControls = false
             webViewClient = ServerWebViewClient(id)
             webChromeClient = object : WebChromeClient() {
                 override fun onProgressChanged(view: WebView, newProgress: Int) {
