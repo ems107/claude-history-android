@@ -1,4 +1,4 @@
-import java.util.Properties
+﻿import java.util.Properties
 
 plugins {
     alias(libs.plugins.android.application)
@@ -28,8 +28,8 @@ android {
         // The floor is the Urovo DT50 (Android 9), the ceiling a Galaxy S25.
         minSdk = 28
         targetSdk = 36
-        versionCode = 10101
-        versionName = "1.1.1"
+        versionCode = 10200
+        versionName = "1.2.0"
     }
 
     signingConfigs {
