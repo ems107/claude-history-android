@@ -12,9 +12,14 @@ import android.webkit.WebChromeClient
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
@@ -45,18 +50,23 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.webkit.WebViewCompat
@@ -112,6 +122,10 @@ fun ViewerScreen(
     var desktop by remember(serverId) { mutableStateOf(false) }
     var zoom by remember(serverId) { mutableIntStateOf(ZOOM_DEFAULT) }
     LaunchedEffect(serverId, desktop, zoom) { WebViewCache.setMode(serverId, desktop, zoom) }
+    // The bar starts hidden, so the page has the whole screen until the bar is
+    // asked for -- and, like the zoom, it is back to hidden on every entry.
+    var barHidden by remember(serverId) { mutableStateOf(true) }
+    var tabOffset by remember(serverId) { mutableFloatStateOf(0f) }
 
     // Leaving the viewer -- by Servers, by walking back out of the page history,
     // or because a notification sends this screen to another server -- throws the
@@ -120,56 +134,94 @@ fun ViewerScreen(
     // re-read the generation and build a replacement nobody would see.
     DisposableEffect(serverId) { onDispose { WebViewCache.discard(serverId) } }
 
-    Column(Modifier.fillMaxSize()) {
-        ViewerBar(
-            title = server?.label() ?: "claude-history",
-            progress = WebViewCache.progressOf(serverId),
-            desktop = desktop,
-            zoom = zoom,
-            onHome = onBack,
-            onDesktop = { desktop = !desktop },
-            onZoom = { zoom = it },
-            onReload = { WebViewCache.get(serverId)?.reload() },
-        )
+    val current = if (off) null else state
+    // With no page there is nothing for the bar to be out of the way of, and it
+    // carries Servers, which is the way out of a server that is not answering.
+    val barShown = !barHidden || current !is Connection.Ready
+    val progress = WebViewCache.progressOf(serverId)
 
-        OldWebViewWarning(context)
+    Column(Modifier.fillMaxSize()) {
+        if (barShown) {
+            ViewerBar(
+                title = server?.label() ?: "claude-history",
+                progress = progress,
+                desktop = desktop,
+                zoom = zoom,
+                onHome = onBack,
+                onDesktop = { desktop = !desktop },
+                onZoom = { zoom = it },
+                onReload = { WebViewCache.get(serverId)?.reload() },
+                onHide = { barHidden = true },
+            )
+        }
 
         // The page keeps clear of the gesture bar, of a cutout in landscape and of
         // the keyboard when a field inside the page takes focus: edge to edge
-        // means the window no longer resizes for any of the three by itself.
-        Box(
-            Modifier
-                .fillMaxSize()
-                .windowInsetsPadding(
-                    WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom),
-                ),
-        ) {
-            when (val current = if (off) null else state) {
-                is Connection.Ready -> {
-                    val cookie = viewModel.sessionCookie(current.baseUrl)
-                    val target = current.baseUrl.trimEnd('/') + startPath
-                    // Keyed on the generation so a view whose renderer died is
-                    // replaced rather than shown dead.
-                    key(WebViewCache.generationOf(serverId)) {
-                        AndroidView(
-                            modifier = Modifier.fillMaxSize(),
-                            factory = { ctx -> WebViewCache.obtain(ctx, serverId) },
-                            update = { view ->
-                                WebViewCache.load(view, serverId, current.baseUrl, target, cookie)
-                            },
-                        )
-                    }
-                }
+        // means the window no longer resizes for any of the three by itself. With
+        // the bar hidden there is nothing painted under the clock either, so the
+        // page keeps clear of that too.
+        val sides = if (barShown) {
+            WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom
+        } else {
+            WindowInsetsSides.Horizontal + WindowInsetsSides.Vertical
+        }
+        Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing.only(sides))) {
+            OldWebViewWarning(context)
 
-                null -> if (off) {
-                    CentredMessage("This server is disabled. Turn it back on in its settings.")
-                } else {
-                    CentredMessage("Connecting...", spinner = serverId in connecting)
+            BoxWithConstraints(Modifier.fillMaxSize()) {
+                ViewerContent(viewModel, serverId, startPath, current, off, serverId in connecting)
+                if (!barShown) {
+                    // The bar's load line, while the bar is not there to carry it:
+                    // on a fresh WebView it is the only thing in the white gap.
+                    // Laid over the page rather than above it, so that it coming
+                    // and going does not move the page by two pixels each time.
+                    LoadLine(progress, Modifier.align(Alignment.TopCenter))
+                    ShowBarTab(
+                        offset = tabOffset,
+                        maxOffset = constraints.maxWidth / 2f,
+                        onDrag = { tabOffset = it },
+                        onShow = { barHidden = false },
+                    )
                 }
-                is Connection.Refused -> CentredMessage(current.detail)
-                is Connection.Unreachable -> CentredMessage(current.detail)
             }
         }
+    }
+}
+
+/** The page, or what is standing in for it. */
+@Composable
+private fun ViewerContent(
+    viewModel: ServersViewModel,
+    serverId: String,
+    startPath: String,
+    current: Connection?,
+    off: Boolean,
+    connecting: Boolean,
+) {
+    when (current) {
+        is Connection.Ready -> {
+            val cookie = viewModel.sessionCookie(current.baseUrl)
+            val target = current.baseUrl.trimEnd('/') + startPath
+            // Keyed on the generation so a view whose renderer died is
+            // replaced rather than shown dead.
+            key(WebViewCache.generationOf(serverId)) {
+                AndroidView(
+                    modifier = Modifier.fillMaxSize(),
+                    factory = { ctx -> WebViewCache.obtain(ctx, serverId) },
+                    update = { view ->
+                        WebViewCache.load(view, serverId, current.baseUrl, target, cookie)
+                    },
+                )
+            }
+        }
+
+        null -> if (off) {
+            CentredMessage("This server is disabled. Turn it back on in its settings.")
+        } else {
+            CentredMessage("Connecting...", spinner = connecting)
+        }
+        is Connection.Refused -> CentredMessage(current.detail)
+        is Connection.Unreachable -> CentredMessage(current.detail)
     }
 }
 
@@ -179,7 +231,8 @@ fun ViewerScreen(
  * There is no back button, deliberately: the phone already has one, and this
  * screen's own handler already makes it walk the page history first. What is
  * here instead is the four things a browser bar is for -- where you are, how
- * wide to draw it, how big, and load it again.
+ * wide to draw it, how big, and load it again -- and a fifth, getting out of
+ * the way.
  */
 @Composable
 private fun ViewerBar(
@@ -191,6 +244,7 @@ private fun ViewerBar(
     onDesktop: () -> Unit,
     onZoom: (Int) -> Unit,
     onReload: () -> Unit,
+    onHide: () -> Unit,
 ) {
     Surface(color = MaterialTheme.colorScheme.surfaceContainer, shadowElevation = 3.dp) {
         Column {
@@ -239,25 +293,79 @@ private fun ViewerBar(
                 ZoomPill(zoom, onZoom)
 
                 BarButton(icon = R.drawable.ic_refresh, description = "Reload", onClick = onReload)
+
+                BarButton(icon = R.drawable.ic_chevron_up, description = "Hide the bar", onClick = onHide)
             }
 
-            // Only while something is actually happening. A bar that is always
-            // there, empty, is a line of furniture rather than an answer.
-            if (progress in 1..99) {
-                LinearProgressIndicator(
-                    progress = { progress / 100f },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))
-                        .height(2.dp),
-                    trackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-                    drawStopIndicator = {},
-                    gapSize = 0.dp,
-                )
-            }
+            LoadLine(progress, Modifier.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal)))
         }
     }
 }
+
+/**
+ * How far the page has loaded, as a line two pixels high. Only while something
+ * is actually happening: a line that is always there, empty, is furniture
+ * rather than an answer.
+ */
+@Composable
+private fun LoadLine(progress: Int, modifier: Modifier = Modifier) {
+    if (progress !in 1..99) return
+    LinearProgressIndicator(
+        progress = { progress / 100f },
+        modifier = modifier.fillMaxWidth().height(2.dp),
+        trackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+        drawStopIndicator = {},
+        gapSize = 0.dp,
+    )
+}
+
+/**
+ * What is left of the bar while it is hidden: a tab hanging from the top of the
+ * page. A tap brings the bar back; a sideways drag moves the tab off whatever
+ * the page has under it -- claude-history keeps buttons along its top edge --
+ * and it stays where it is let go.
+ *
+ * @param maxOffset half the width the tab can travel in, in pixels.
+ */
+@Composable
+private fun BoxScope.ShowBarTab(
+    offset: Float,
+    maxOffset: Float,
+    onDrag: (Float) -> Unit,
+    onShow: () -> Unit,
+) {
+    val tabHalf = with(LocalDensity.current) { TAB_WIDTH.toPx() / 2 }
+    val limit = (maxOffset - tabHalf).coerceAtLeast(0f)
+    // Read through the state rather than the parameter, which the drag handler
+    // below would otherwise freeze at the value it had when it was installed.
+    val latest by rememberUpdatedState(offset)
+    Surface(
+        shape = RoundedCornerShape(bottomStart = 14.dp, bottomEnd = 14.dp),
+        color = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.85f),
+        shadowElevation = 2.dp,
+        modifier = Modifier
+            .align(Alignment.TopCenter)
+            .offset { IntOffset(offset.coerceIn(-limit, limit).roundToInt(), 0) }
+            .pointerInput(limit) {
+                detectHorizontalDragGestures { change, dragAmount ->
+                    change.consume()
+                    onDrag((latest.coerceIn(-limit, limit) + dragAmount).coerceIn(-limit, limit))
+                }
+            }
+            .clickable(onClick = onShow),
+    ) {
+        Box(Modifier.size(TAB_WIDTH, 26.dp), contentAlignment = Alignment.Center) {
+            Icon(
+                painterResource(R.drawable.ic_chevron_down),
+                contentDescription = "Show the bar",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(22.dp),
+            )
+        }
+    }
+}
+
+private val TAB_WIDTH = 64.dp
 
 @Composable
 private fun BarButton(
