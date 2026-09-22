@@ -37,16 +37,15 @@ after the user has tried it.
   landscape, kept portrait's scale (~0.53) and drew the page smaller than at
   100 %. Phone mode does not show it (Chromium refits on its own). Fixed with a
   layout-change listener that rewrites the viewport when the width changes.
-- [x] **Pin while loading** — split into `pin = true` / `pin = false`, in its
-  own commit. **Not reproduced here**: the pinch cannot be driven from adb on
-  this device, and reading `visualViewport.scale` over DevTools needs a debug
-  build installed. Kept because a fresh load has nothing to pull back from, so
-  the pin there bought nothing even if the bug does not occur; to drop if the
-  user finds the pinch fine on 1.1.1 after a reload at 150 %.
-- [x] **Hideable bar and tab** — compiles. Bar hidden on entry, `Hide the bar`
-  button, tab with a sideways drag, page clearing the status bar while hidden,
-  load line laid over the page's top edge while hidden, bar forced while there
-  is no page. **Not yet seen on the DT50**: the installed 1.1.1 carries the
-  release key, which is not on this machine, and a debug-key build only
-  installs after an uninstall that takes the servers and passwords with it.
-- [ ] CLAUDE.md verifying rows
+- [x] **Pin while loading** — **not reproduced, so dropped** from the branch.
+  Built the pre-change code, zoomed to 110 % and to 150 %, reloaded, and
+  pinched over DevTools: `visualViewport.scale` went 1.5 → 2.25 → 3.37, and
+  1.10 → 1.65. The pinch survives a reload here.
+- [x] **Hideable bar and tab** — measured on the DT50, release-signed debug
+  build installed over 1.1.1: hidden on entry with the load line over the
+  page's top edge, tab tap shows the bar, the chevron hides it, the drag stops
+  at the edge and the position survives hide/show, page clear of status and
+  navigation bars in portrait, landscape and dark. Not seen: the no-page case
+  (the server answered every time).
+- [x] CLAUDE.md verifying rows — the bar, turning the phone, the pinch over
+  DevTools and its focus quirk, the progress line while hidden.
