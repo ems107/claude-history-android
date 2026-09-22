@@ -445,7 +445,7 @@ private fun viewportScript(base: Int, desktop: Boolean, zoom: Int): String {
     return """
         (function () {
           var m = document.querySelector('meta[name="viewport"]');
-          if (!m) { m = document.createElement('meta'); m.setAttribute('name', 'viewport'); document.head.appendChild(m); }
+          if (!m) { m = document.createElement('meta'); m.setAttribute('name', 'viewport'); (document.head || document.documentElement).appendChild(m); }
           if (window.__chFree) clearTimeout(window.__chFree);
           m.setAttribute('content', 'width=$width, initial-scale=$scale, minimum-scale=$scale, maximum-scale=$scale');
           window.__chFree = setTimeout(function () {
@@ -571,6 +571,16 @@ object WebViewCache {
             settings.setSupportZoom(true)
             settings.builtInZoomControls = true
             settings.displayZoomControls = false
+            // The layout width is measured off the view, and this Activity handles
+            // rotation itself, so turning the phone does not rebuild anything: the
+            // viewport has to be written again for the new width. Without it the
+            // scale stays the one worked out for the other axis -- in desktop mode
+            // at 150 % that is 0.53, and the page came out smaller than at 100 %.
+            // The first layout is not a rotation: it lands while the page loads.
+            addOnLayoutChangeListener { _, left, _, right, _, oldLeft, _, oldRight, _ ->
+                val old = oldRight - oldLeft
+                if (old > 0 && right - left != old) applyMode(this, id)
+            }
             webViewClient = ServerWebViewClient(id)
             webChromeClient = object : WebChromeClient() {
                 override fun onProgressChanged(view: WebView, newProgress: Int) {
